@@ -1,0 +1,35 @@
+# Maven
+target/
+pom.xml.versionsBackup
+.mvn/wrapper/maven-wrapper.jar
+
+# Quarkus
+.quarkus/
+build/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+!.vscode/extensions.json
+.settings/
+.project
+.classpath
+.factorypath
+
+# Node / UI
+node_modules/
+dist/
+.npm
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs and local state
+*.log
+.env
+.env.local

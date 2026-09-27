@@ -30,9 +30,10 @@
       <artifactId>quarkus-arc</artifactId>
     </dependency>
 
+    <!-- quarkus-junit5 was relocated to quarkus-junit in Quarkus 3.31 -->
     <dependency>
       <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-junit5</artifactId>
+      <artifactId>quarkus-junit</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>

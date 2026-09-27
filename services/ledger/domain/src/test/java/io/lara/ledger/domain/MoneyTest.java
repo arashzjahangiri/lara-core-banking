@@ -40,8 +40,12 @@ class MoneyTest {
                     .hasMessageContaining("XXX");
         }
 
+        /**
+         * Postings carry a positive amount and an {@link EntrySide}, so a leg is never negative.
+         * Balances are, though: an overdrawn account or a reversed position both go below zero.
+         */
         @Test
-        void accepts_negative_amounts_because_a_credit_leg_is_negative() {
+        void accepts_negative_amounts_because_a_balance_can_go_below_zero() {
             assertThat(Money.of(-2500L, EUR).minorUnits()).isEqualTo(-2500L);
         }
 

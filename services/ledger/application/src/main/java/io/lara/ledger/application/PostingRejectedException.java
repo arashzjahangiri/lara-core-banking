@@ -20,10 +20,32 @@ import java.util.Currency;
 public sealed class PostingRejectedException extends RuntimeException
         permits PostingRejectedException.UnknownAccount,
         PostingRejectedException.AccountCurrencyMismatch,
-        PostingRejectedException.PostingLimitExceeded {
+        PostingRejectedException.PostingLimitExceeded,
+        PostingRejectedException.ReferenceReused {
 
     private PostingRejectedException(String message) {
         super(message);
+    }
+
+    /**
+     * The reference has already been used, for a different set of legs.
+     *
+     * <p>A retry carries identical legs and is answered with the original transaction. Different
+     * legs under the same reference is a caller bug — two distinct movements sharing one key — and
+     * returning the original would hide it while quietly dropping the second movement.
+     */
+    public static final class ReferenceReused extends PostingRejectedException {
+
+        private final transient io.lara.ledger.domain.TransactionReference reference;
+
+        ReferenceReused(io.lara.ledger.domain.TransactionReference reference) {
+            super("reference " + reference + " was already used for a different transaction");
+            this.reference = reference;
+        }
+
+        public io.lara.ledger.domain.TransactionReference reference() {
+            return reference;
+        }
     }
 
     /** A leg referenced an account that is not open. */

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,9 +28,16 @@ class AccountBalanceTest {
         return Money.of(minorUnits, "EUR");
     }
 
+    private static final AtomicInteger REFERENCES = new AtomicInteger();
+
+    /** A distinct reference per transaction, so idempotency does not collapse unrelated tests. */
+    private static TransactionReference nextReference() {
+        return TransactionReference.of("TEST-" + REFERENCES.incrementAndGet());
+    }
+
     /** Funding: the bank's cash rises and it now owes the customer the same amount. */
     private static LedgerTransaction funding(Instant at, long minorUnits) {
-        return LedgerTransaction.of(TransactionId.newId(), at,
+        return LedgerTransaction.of(TransactionId.newId(), nextReference(), at,
                 debit(CASH.id(), eur(minorUnits)),
                 credit(DEPOSIT.id(), eur(minorUnits)));
     }
@@ -63,7 +71,7 @@ class AccountBalanceTest {
         void a_debit_lowers_a_liability() {
             List<LedgerTransaction> book = List.of(
                     funding(MONDAY, 50000),
-                    LedgerTransaction.of(TransactionId.newId(), TUESDAY,
+                    LedgerTransaction.of(TransactionId.newId(), nextReference(), TUESDAY,
                             debit(DEPOSIT.id(), eur(12500)),
                             credit(CASH.id(), eur(12500))));
 
@@ -76,7 +84,7 @@ class AccountBalanceTest {
         void sums_every_leg_when_one_transaction_touches_an_account_more_than_once() {
             List<LedgerTransaction> book = List.of(
                     funding(MONDAY, 50000),
-                    LedgerTransaction.of(TransactionId.newId(), TUESDAY,
+                    LedgerTransaction.of(TransactionId.newId(), nextReference(), TUESDAY,
                             debit(DEPOSIT.id(), eur(10000)),
                             debit(DEPOSIT.id(), eur(50)),
                             credit(CASH.id(), eur(10000)),
@@ -89,7 +97,7 @@ class AccountBalanceTest {
         @Test
         void ignores_transactions_that_do_not_touch_the_account() {
             List<LedgerTransaction> book = List.of(
-                    LedgerTransaction.of(TransactionId.newId(), MONDAY,
+                    LedgerTransaction.of(TransactionId.newId(), nextReference(), MONDAY,
                             debit(CASH.id(), eur(999)),
                             credit(FEE_INCOME.id(), eur(999))));
 
@@ -99,7 +107,7 @@ class AccountBalanceTest {
         @Test
         void does_not_depend_on_the_order_transactions_are_supplied_in() {
             LedgerTransaction first = funding(MONDAY, 50000);
-            LedgerTransaction second = LedgerTransaction.of(TransactionId.newId(), TUESDAY,
+            LedgerTransaction second = LedgerTransaction.of(TransactionId.newId(), nextReference(), TUESDAY,
                     debit(DEPOSIT.id(), eur(12500)),
                     credit(CASH.id(), eur(12500)));
 
@@ -116,10 +124,10 @@ class AccountBalanceTest {
 
         private final List<LedgerTransaction> book = List.of(
                 funding(MONDAY, 50000),
-                LedgerTransaction.of(TransactionId.newId(), TUESDAY,
+                LedgerTransaction.of(TransactionId.newId(), nextReference(), TUESDAY,
                         debit(DEPOSIT.id(), eur(12500)),
                         credit(CASH.id(), eur(12500))),
-                LedgerTransaction.of(TransactionId.newId(), WEDNESDAY,
+                LedgerTransaction.of(TransactionId.newId(), nextReference(), WEDNESDAY,
                         debit(DEPOSIT.id(), eur(7500)),
                         credit(CASH.id(), eur(7500))));
 
@@ -164,7 +172,7 @@ class AccountBalanceTest {
         @Test
         void a_negative_balance_reports_the_opposite_side() {
             List<LedgerTransaction> book = List.of(
-                    LedgerTransaction.of(TransactionId.newId(), MONDAY,
+                    LedgerTransaction.of(TransactionId.newId(), nextReference(), MONDAY,
                             debit(DEPOSIT.id(), eur(2500)),
                             credit(CASH.id(), eur(2500))));
 
@@ -188,7 +196,7 @@ class AccountBalanceTest {
         void every_balance_summed_across_all_accounts_is_zero() {
             List<LedgerTransaction> book = List.of(
                     funding(MONDAY, 50000),
-                    LedgerTransaction.of(TransactionId.newId(), TUESDAY,
+                    LedgerTransaction.of(TransactionId.newId(), nextReference(), TUESDAY,
                             debit(DEPOSIT.id(), eur(10000)),
                             debit(DEPOSIT.id(), eur(50)),
                             credit(CASH.id(), eur(10000)),
@@ -211,7 +219,7 @@ class AccountBalanceTest {
         void refuses_to_post_a_foreign_currency_to_an_account() {
             LedgerAccount yenAccount = LedgerAccount.of("CUSTOMER000009", AccountClass.LIABILITY, "JPY");
             List<LedgerTransaction> book = List.of(
-                    LedgerTransaction.of(TransactionId.newId(), MONDAY,
+                    LedgerTransaction.of(TransactionId.newId(), nextReference(), MONDAY,
                             debit(CASH.id(), eur(100)),
                             credit(yenAccount.id(), eur(100))));
 

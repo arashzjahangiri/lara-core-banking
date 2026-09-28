@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -24,8 +25,15 @@ class LedgerTransactionTest {
         return Money.of(minorUnits, "EUR");
     }
 
+    private static final AtomicInteger REFERENCES = new AtomicInteger();
+
+    /** A distinct reference per transaction, so idempotency does not collapse unrelated tests. */
+    private static TransactionReference nextReference() {
+        return TransactionReference.of("TEST-" + REFERENCES.incrementAndGet());
+    }
+
     private static LedgerTransaction transaction(PostingLeg... legs) {
-        return LedgerTransaction.of(TransactionId.newId(), NOW, legs);
+        return LedgerTransaction.of(TransactionId.newId(), nextReference(), NOW, legs);
     }
 
     @Nested
@@ -132,7 +140,7 @@ class LedgerTransactionTest {
             assertThatThrownBy(() -> transaction(debit(SENDER, eur(100))))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("at least 2 legs");
-            assertThatThrownBy(() -> LedgerTransaction.of(TransactionId.newId(), NOW))
+            assertThatThrownBy(() -> LedgerTransaction.of(TransactionId.newId(), nextReference(), NOW))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -169,7 +177,7 @@ class LedgerTransactionTest {
                     debit(SENDER, eur(100)),
                     credit(RECEIVER, eur(100))));
 
-            LedgerTransaction transaction = new LedgerTransaction(TransactionId.newId(), NOW, mutable);
+            LedgerTransaction transaction = new LedgerTransaction(TransactionId.newId(), nextReference(), NOW, mutable);
             mutable.add(debit(FEE_INCOME, eur(999)));
 
             assertThat(transaction.legs()).hasSize(2);
@@ -191,7 +199,7 @@ class LedgerTransactionTest {
             withNull.add(debit(SENDER, eur(100)));
             withNull.add(null);
 
-            assertThatThrownBy(() -> new LedgerTransaction(TransactionId.newId(), NOW, withNull))
+            assertThatThrownBy(() -> new LedgerTransaction(TransactionId.newId(), nextReference(), NOW, withNull))
                     .isInstanceOf(NullPointerException.class);
         }
     }
@@ -209,7 +217,7 @@ class LedgerTransactionTest {
                     credit(FEE_INCOME, eur(50)));
 
             TransactionId reversalId = TransactionId.newId();
-            LedgerTransaction reversal = original.contra(reversalId, NOW.plusSeconds(60));
+            LedgerTransaction reversal = original.contra(reversalId, nextReference(), NOW.plusSeconds(60));
 
             assertThat(reversal.id()).isEqualTo(reversalId);
             assertThat(reversal.legs()).hasSize(3);
@@ -224,7 +232,7 @@ class LedgerTransactionTest {
             LedgerTransaction original = transaction(
                     debit(SENDER, eur(10000)),
                     credit(RECEIVER, eur(10000)));
-            LedgerTransaction reversal = original.contra(TransactionId.newId(), NOW.plusSeconds(1));
+            LedgerTransaction reversal = original.contra(TransactionId.newId(), nextReference(), NOW.plusSeconds(1));
 
             Money netForSender = netSigned(List.of(original, reversal), AccountId.of(SENDER));
             assertThat(netForSender).isEqualTo(eur(0));

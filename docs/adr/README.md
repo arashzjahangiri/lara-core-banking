@@ -12,6 +12,7 @@ means adding a new record that references the old one.
 | [0004](0004-transactional-outbox-for-event-publishing.md) | Transactional outbox for event publishing | Accepted |
 | [0005](0005-customer-deposits-are-liabilities.md) | Customer deposits are liabilities | Accepted |
 | [0006](0006-transactions-hold-n-legs-that-sum-to-zero.md) | Transactions hold N legs that sum to zero | Accepted |
+| [0007](0007-idempotency-by-caller-supplied-reference.md) | Idempotency by caller-supplied reference | Accepted |
 
 ## Planned
 

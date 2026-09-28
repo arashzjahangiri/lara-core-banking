@@ -26,12 +26,16 @@ import java.util.Objects;
  * what was written — which is what makes the ledger an audit record rather than a cache of the
  * current state.
  */
-public record LedgerTransaction(TransactionId id, Instant occurredAt, List<PostingLeg> legs) {
+public record LedgerTransaction(TransactionId id,
+        TransactionReference reference,
+        Instant occurredAt,
+        List<PostingLeg> legs) {
 
     private static final int MINIMUM_LEGS = 2;
 
     public LedgerTransaction {
         Objects.requireNonNull(id, "transaction id must not be null");
+        Objects.requireNonNull(reference, "transaction reference must not be null");
         Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         Objects.requireNonNull(legs, "legs must not be null");
 
@@ -45,8 +49,18 @@ public record LedgerTransaction(TransactionId id, Instant occurredAt, List<Posti
         requireBalanced(legs);
     }
 
-    public static LedgerTransaction of(TransactionId id, Instant occurredAt, PostingLeg... legs) {
-        return new LedgerTransaction(id, occurredAt, List.of(legs));
+    public static LedgerTransaction of(TransactionId id,
+            TransactionReference reference,
+            Instant occurredAt,
+            PostingLeg... legs) {
+
+        return new LedgerTransaction(id, reference, occurredAt, List.of(legs));
+    }
+
+    /** Whether this transaction carries the same legs, in the same order, as {@code other}. */
+    public boolean hasSameLegsAs(LedgerTransaction other) {
+        Objects.requireNonNull(other, "other must not be null");
+        return legs.equals(other.legs);
     }
 
     /** The currency every leg is denominated in. */
@@ -72,8 +86,12 @@ public record LedgerTransaction(TransactionId id, Instant occurredAt, List<Posti
      * A transaction that exactly undoes this one, with every leg on the opposite side. Used to
      * correct a mistake and to compensate a failed saga step.
      */
-    public LedgerTransaction contra(TransactionId reversalId, Instant reversedAt) {
-        return new LedgerTransaction(reversalId, reversedAt, legs.stream().map(PostingLeg::contra).toList());
+    public LedgerTransaction contra(TransactionId reversalId,
+            TransactionReference reversalReference,
+            Instant reversedAt) {
+
+        return new LedgerTransaction(reversalId, reversalReference, reversedAt,
+                legs.stream().map(PostingLeg::contra).toList());
     }
 
     private Money total(EntrySide side) {

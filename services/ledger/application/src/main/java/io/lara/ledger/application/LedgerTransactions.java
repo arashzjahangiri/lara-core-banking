@@ -1,6 +1,9 @@
 package io.lara.ledger.application;
 
+import java.util.Optional;
+
 import io.lara.ledger.domain.LedgerTransaction;
+import io.lara.ledger.domain.TransactionReference;
 
 /**
  * A port for writing to the ledger.
@@ -23,4 +26,12 @@ public interface LedgerTransactions {
      * — so an implementation does not re-check the balancing rule.
      */
     void append(LedgerTransaction transaction);
+
+    /**
+     * The transaction previously recorded under this caller-supplied reference, if any.
+     *
+     * <p>This is what makes posting idempotent: a retry carries the same reference, finds the
+     * original and returns it rather than moving the money again.
+     */
+    Optional<LedgerTransaction> findByReference(TransactionReference reference);
 }

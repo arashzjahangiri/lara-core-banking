@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 import io.lara.ledger.domain.AccountId;
 import io.lara.ledger.domain.LedgerAccount;
@@ -59,7 +60,13 @@ public final class PostTransaction {
         // Building the transaction first lets the domain reject anything impossible — unbalanced,
         // mixed-currency, too few legs — before any port is touched.
         Instant occurredAt = clock.instant();
-        LedgerTransaction transaction = new LedgerTransaction(TransactionId.newId(), occurredAt, legs);
+        LedgerTransaction transaction =
+                new LedgerTransaction(TransactionId.newId(), command.reference(), occurredAt, legs);
+
+        Optional<LedgerTransaction> alreadyPosted = transactions.findByReference(command.reference());
+        if (alreadyPosted.isPresent()) {
+            return answerRetry(alreadyPosted.get(), transaction);
+        }
 
         for (PostingLeg leg : legs) {
             requirePostable(leg);
@@ -68,6 +75,18 @@ public final class PostTransaction {
 
         transactions.append(transaction);
         return transaction;
+    }
+
+    /**
+     * A repeat of a reference already recorded. Identical legs mean a retry, which is answered with
+     * the original and moves no money. Different legs mean the caller reused a key for a different
+     * movement, which is refused rather than silently dropped.
+     */
+    private LedgerTransaction answerRetry(LedgerTransaction original, LedgerTransaction requested) {
+        if (!original.hasSameLegsAs(requested)) {
+            throw new PostingRejectedException.ReferenceReused(original.reference());
+        }
+        return original;
     }
 
     private void requirePostable(PostingLeg leg) {

@@ -66,13 +66,18 @@ class PostTransactionTest {
                 Clock.fixed(POSTED_AT, ZoneOffset.UTC));
     }
 
+    /** Most tests care about what was recorded, not about whether this call is what recorded it. */
+    private LedgerTransaction post(PostTransactionCommand command) {
+        return postTransaction.post(command).transaction();
+    }
+
     @Nested
     @DisplayName("recording a transaction")
     class Recording {
 
         @Test
         void appends_a_balanced_transfer_and_returns_it() {
-            LedgerTransaction posted = postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            LedgerTransaction posted = post(PostTransactionCommand.of(nextReference(), 
                     debit(SENDER.id(), eur(10000)),
                     credit(RECEIVER.id(), eur(10000))));
 
@@ -83,7 +88,7 @@ class PostTransactionTest {
 
         @Test
         void accepts_a_transfer_carrying_a_fee() {
-            LedgerTransaction posted = postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            LedgerTransaction posted = post(PostTransactionCommand.of(nextReference(), 
                     debit(SENDER.id(), eur(10000)),
                     credit(RECEIVER.id(), eur(9950)),
                     credit(FEE_INCOME.id(), eur(50))));
@@ -95,7 +100,7 @@ class PostTransactionTest {
         /** The ledger assigns the instant, from the injected clock. A caller's clock is not evidence. */
         @Test
         void stamps_the_instant_from_the_injected_clock() {
-            LedgerTransaction posted = postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            LedgerTransaction posted = post(PostTransactionCommand.of(nextReference(), 
                     debit(SENDER.id(), eur(100)),
                     credit(RECEIVER.id(), eur(100))));
 
@@ -104,9 +109,9 @@ class PostTransactionTest {
 
         @Test
         void assigns_a_distinct_identity_to_every_transaction() {
-            LedgerTransaction first = postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            LedgerTransaction first = post(PostTransactionCommand.of(nextReference(), 
                     debit(SENDER.id(), eur(100)), credit(RECEIVER.id(), eur(100))));
-            LedgerTransaction second = postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            LedgerTransaction second = post(PostTransactionCommand.of(nextReference(), 
                     debit(SENDER.id(), eur(100)), credit(RECEIVER.id(), eur(100))));
 
             assertThat(first.id()).isNotEqualTo(second.id());
@@ -118,7 +123,7 @@ class PostTransactionTest {
             LedgerAccount otherYen = LedgerAccount.of("CUSTOMER000010", AccountClass.LIABILITY, "JPY");
             accounts.with(otherYen);
 
-            LedgerTransaction posted = postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            LedgerTransaction posted = post(PostTransactionCommand.of(nextReference(), 
                     debit(YEN_ACCOUNT.id(), Money.of(5000, "JPY")),
                     credit(otherYen.id(), Money.of(5000, "JPY"))));
 
@@ -134,7 +139,7 @@ class PostTransactionTest {
         void refuses_an_account_that_is_not_open() {
             AccountId missing = AccountId.of("CUSTOMER999999");
 
-            assertThatThrownBy(() -> postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            assertThatThrownBy(() -> post(PostTransactionCommand.of(nextReference(), 
                     debit(missing, eur(100)),
                     credit(RECEIVER.id(), eur(100)))))
                     .isInstanceOf(PostingRejectedException.UnknownAccount.class)
@@ -145,7 +150,7 @@ class PostTransactionTest {
 
         @Test
         void refuses_a_currency_the_account_cannot_hold() {
-            assertThatThrownBy(() -> postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            assertThatThrownBy(() -> post(PostTransactionCommand.of(nextReference(), 
                     debit(YEN_ACCOUNT.id(), eur(100)),
                     credit(RECEIVER.id(), eur(100)))))
                     .isInstanceOf(PostingRejectedException.AccountCurrencyMismatch.class)
@@ -157,7 +162,7 @@ class PostTransactionTest {
 
         @Test
         void refuses_an_amount_over_the_limit() {
-            assertThatThrownBy(() -> postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            assertThatThrownBy(() -> post(PostTransactionCommand.of(nextReference(), 
                     debit(SENDER.id(), eur(1_000_01)),
                     credit(RECEIVER.id(), eur(1_000_01)))))
                     .isInstanceOf(PostingRejectedException.PostingLimitExceeded.class);
@@ -167,7 +172,7 @@ class PostTransactionTest {
 
         @Test
         void accepts_an_amount_exactly_at_the_limit() {
-            LedgerTransaction posted = postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            LedgerTransaction posted = post(PostTransactionCommand.of(nextReference(), 
                     debit(SENDER.id(), eur(1_000_00)),
                     credit(RECEIVER.id(), eur(1_000_00))));
 
@@ -177,7 +182,7 @@ class PostTransactionTest {
         /** The domain rejects what is impossible, before any port is touched. */
         @Test
         void refuses_legs_that_do_not_balance_without_consulting_the_ports() {
-            assertThatThrownBy(() -> postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            assertThatThrownBy(() -> post(PostTransactionCommand.of(nextReference(), 
                     debit(SENDER.id(), eur(10000)),
                     credit(RECEIVER.id(), eur(9950)))))
                     .isInstanceOf(IllegalArgumentException.class)
@@ -188,7 +193,7 @@ class PostTransactionTest {
 
         @Test
         void refuses_a_null_command() {
-            assertThatThrownBy(() -> postTransaction.post(null))
+            assertThatThrownBy(() -> post(null))
                     .isInstanceOf(NullPointerException.class);
             assertThat(transactions.wroteNothing()).isTrue();
         }
@@ -205,7 +210,7 @@ class PostTransactionTest {
             LedgerAccount poundsTwo = LedgerAccount.of("CUSTOMER000021", AccountClass.LIABILITY, "GBP");
             accounts.with(poundsOne, poundsTwo);
 
-            assertThatThrownBy(() -> postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            assertThatThrownBy(() -> post(PostTransactionCommand.of(nextReference(), 
                     debit(poundsOne.id(), Money.of(1, "GBP")),
                     credit(poundsTwo.id(), Money.of(1, "GBP")))))
                     .isInstanceOf(PostingRejectedException.PostingLimitExceeded.class);
@@ -235,7 +240,7 @@ class PostTransactionTest {
             LedgerAccount third = LedgerAccount.of("CUSTOMER000003", AccountClass.LIABILITY, "EUR");
             accounts.with(third);
 
-            assertThatThrownBy(() -> postTransaction.post(PostTransactionCommand.of(nextReference(), 
+            assertThatThrownBy(() -> post(PostTransactionCommand.of(nextReference(), 
                     debit(SENDER.id(), eur(400_00)),
                     debit(RECEIVER.id(), eur(400_00)),
                     debit(third.id(), eur(400_00)),
@@ -277,11 +282,11 @@ class PostTransactionTest {
          */
         @Test
         void a_retry_returns_the_original_and_moves_no_money_again() {
-            LedgerTransaction first = postTransaction.post(PostTransactionCommand.of(SAME,
+            LedgerTransaction first = post(PostTransactionCommand.of(SAME,
                     debit(SENDER.id(), eur(10000)),
                     credit(RECEIVER.id(), eur(10000))));
 
-            LedgerTransaction retry = postTransaction.post(PostTransactionCommand.of(SAME,
+            LedgerTransaction retry = post(PostTransactionCommand.of(SAME,
                     debit(SENDER.id(), eur(10000)),
                     credit(RECEIVER.id(), eur(10000))));
 
@@ -293,11 +298,11 @@ class PostTransactionTest {
 
         @Test
         void a_retry_is_still_answered_after_many_attempts() {
-            LedgerTransaction first = postTransaction.post(PostTransactionCommand.of(SAME,
+            LedgerTransaction first = post(PostTransactionCommand.of(SAME,
                     debit(SENDER.id(), eur(500)), credit(RECEIVER.id(), eur(500))));
 
             for (int attempt = 0; attempt < 5; attempt++) {
-                assertThat(postTransaction.post(PostTransactionCommand.of(SAME,
+                assertThat(post(PostTransactionCommand.of(SAME,
                         debit(SENDER.id(), eur(500)), credit(RECEIVER.id(), eur(500))))).isEqualTo(first);
             }
             assertThat(transactions.appended()).hasSize(1);
@@ -309,11 +314,11 @@ class PostTransactionTest {
          */
         @Test
         void the_same_reference_with_different_legs_is_refused() {
-            postTransaction.post(PostTransactionCommand.of(SAME,
+            post(PostTransactionCommand.of(SAME,
                     debit(SENDER.id(), eur(10000)),
                     credit(RECEIVER.id(), eur(10000))));
 
-            assertThatThrownBy(() -> postTransaction.post(PostTransactionCommand.of(SAME,
+            assertThatThrownBy(() -> post(PostTransactionCommand.of(SAME,
                     debit(SENDER.id(), eur(2500)),
                     credit(RECEIVER.id(), eur(2500)))))
                     .isInstanceOf(PostingRejectedException.ReferenceReused.class)
@@ -324,9 +329,9 @@ class PostTransactionTest {
 
         @Test
         void different_references_post_separately() {
-            postTransaction.post(PostTransactionCommand.of("PAYMENT-1",
+            post(PostTransactionCommand.of("PAYMENT-1",
                     debit(SENDER.id(), eur(100)), credit(RECEIVER.id(), eur(100))));
-            postTransaction.post(PostTransactionCommand.of("PAYMENT-2",
+            post(PostTransactionCommand.of("PAYMENT-2",
                     debit(SENDER.id(), eur(100)), credit(RECEIVER.id(), eur(100))));
 
             assertThat(transactions.appended()).hasSize(2);
@@ -335,17 +340,53 @@ class PostTransactionTest {
         /** A retry is answered before the limit is consulted, so tightening policy cannot strand one. */
         @Test
         void a_retry_is_answered_even_if_the_limit_has_since_been_lowered() {
-            LedgerTransaction first = postTransaction.post(PostTransactionCommand.of(SAME,
+            LedgerTransaction first = post(PostTransactionCommand.of(SAME,
                     debit(SENDER.id(), eur(900_00)),
                     credit(RECEIVER.id(), eur(900_00))));
 
             PostTransaction stricter = new PostTransaction(accounts, transactions,
                     PostingLimits.of(eur(100_00)), Clock.fixed(POSTED_AT, ZoneOffset.UTC));
 
-            assertThat(stricter.post(PostTransactionCommand.of(SAME,
+            PostTransactionResult retry = stricter.post(PostTransactionCommand.of(SAME,
                     debit(SENDER.id(), eur(900_00)),
-                    credit(RECEIVER.id(), eur(900_00))))).isEqualTo(first);
+                    credit(RECEIVER.id(), eur(900_00))));
+
+            assertThat(retry.transaction()).isEqualTo(first);
+            assertThat(retry.created()).isFalse();
             assertThat(transactions.appended()).hasSize(1);
+        }
+
+        /** The caller must be able to tell a first write from a retry; the HTTP layer maps it to 201 vs 200. */
+        @Test
+        void reports_whether_this_call_is_what_recorded_it() {
+            PostTransactionResult first = postTransaction.post(PostTransactionCommand.of(SAME,
+                    debit(SENDER.id(), eur(100)), credit(RECEIVER.id(), eur(100))));
+            PostTransactionResult retry = postTransaction.post(PostTransactionCommand.of(SAME,
+                    debit(SENDER.id(), eur(100)), credit(RECEIVER.id(), eur(100))));
+
+            assertThat(first.created()).isTrue();
+            assertThat(retry.created()).isFalse();
+            assertThat(retry.transaction()).isEqualTo(first.transaction());
+        }
+
+        /**
+         * The race the unique constraint decides in the real adapter: both callers check, both find
+         * nothing, and one loses the insert. The loser must be answered with the winner's
+         * transaction, not an error — the movement they asked for did happen.
+         */
+        @Test
+        void losing_the_insert_race_is_answered_with_the_transaction_that_won() {
+            LedgerTransaction winner = LedgerTransaction.of(
+                    io.lara.ledger.domain.TransactionId.newId(), SAME, POSTED_AT,
+                    debit(SENDER.id(), eur(100)), credit(RECEIVER.id(), eur(100)));
+            transactions.preempt(winner);
+
+            PostTransactionResult result = postTransaction.post(PostTransactionCommand.of(SAME,
+                    debit(SENDER.id(), eur(100)), credit(RECEIVER.id(), eur(100))));
+
+            assertThat(result.transaction()).isEqualTo(winner);
+            assertThat(result.created()).isFalse();
+            assertThat(transactions.appended()).containsExactly(winner);
         }
 
         @Test

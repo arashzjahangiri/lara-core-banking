@@ -17,7 +17,7 @@ import java.util.Currency;
  * reject what is merely <em>not allowed</em>, which depends on state and configuration the domain
  * cannot see.
  */
-public sealed class PostingRejectedException extends RuntimeException
+public abstract sealed class PostingRejectedException extends RuntimeException
         permits PostingRejectedException.UnknownAccount,
         PostingRejectedException.AccountCurrencyMismatch,
         PostingRejectedException.PostingLimitExceeded,

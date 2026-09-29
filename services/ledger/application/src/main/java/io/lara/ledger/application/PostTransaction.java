@@ -48,12 +48,13 @@ public final class PostTransaction {
     }
 
     /**
-     * @return the transaction as it was recorded, including the identity and instant assigned to it
-     * @throws PostingRejectedException when an account is unknown, cannot hold the currency, or the
-     *     amount is over the configured limit
+     * @return the transaction now recorded under the command's reference, and whether this call is
+     *     what recorded it. A retry is a success that moved no money.
+     * @throws PostingRejectedException when an account is unknown, cannot hold the currency, the
+     *     amount is over the configured limit, or the reference was reused for different legs
      * @throws IllegalArgumentException when the legs do not form a balanced transaction
      */
-    public LedgerTransaction post(PostTransactionCommand command) {
+    public PostTransactionResult post(PostTransactionCommand command) {
         Objects.requireNonNull(command, "command must not be null");
 
         List<PostingLeg> legs = command.legs();
@@ -73,8 +74,12 @@ public final class PostTransaction {
         }
         limits.check(transaction.totalDebits());
 
-        transactions.append(transaction);
-        return transaction;
+        // append returns what is now recorded under the reference, which under a race is the
+        // transaction that won rather than the one just built.
+        LedgerTransaction recorded = transactions.append(transaction);
+        return recorded.id().equals(transaction.id())
+                ? PostTransactionResult.created(recorded)
+                : answerRetry(recorded, transaction);
     }
 
     /**
@@ -82,11 +87,11 @@ public final class PostTransaction {
      * the original and moves no money. Different legs mean the caller reused a key for a different
      * movement, which is refused rather than silently dropped.
      */
-    private LedgerTransaction answerRetry(LedgerTransaction original, LedgerTransaction requested) {
+    private PostTransactionResult answerRetry(LedgerTransaction original, LedgerTransaction requested) {
         if (!original.hasSameLegsAs(requested)) {
             throw new PostingRejectedException.ReferenceReused(original.reference());
         }
-        return original;
+        return PostTransactionResult.alreadyRecorded(original);
     }
 
     private void requirePostable(PostingLeg leg) {

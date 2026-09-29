@@ -1,0 +1,74 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A superseded run on the same branch is wasted compute.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # `clean` is not optional. Maven's incremental compiler will skip recompiling a changed
+      # file on a warm tree, which once let a deliberate architecture violation compile and pass.
+      # On a cached runner that is exactly the situation, so a boundary breach could reach main.
+      - name: Build and test
+        run: ./mvnw -B --no-transfer-progress clean verify
+        env:
+          MAVEN_OPTS: -Xmx3g
+
+      # Testcontainers needs a container engine; ubuntu-latest ships Docker, and Quarkus Dev
+      # Services starts PostgreSQL itself, so there is nothing to configure here.
+
+      - name: Publish test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: '**/target/surefire-reports/*.xml'
+          retention-days: 7
+          if-no-files-found: ignore
+
+  verify-formatting:
+    name: Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # Fails if `mvn process-sources` would change anything, so formatting is settled by the
+      # build rather than by review comments.
+      - name: Check formatting is settled
+        run: |
+          ./mvnw -B --no-transfer-progress process-sources
+          if ! git diff --quiet; then
+            echo "::error::Formatting is not settled. Run ./mvnw process-sources and commit the result."
+            git --no-pager diff --stat
+            exit 1
+          fi

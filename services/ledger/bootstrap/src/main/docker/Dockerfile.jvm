@@ -1,0 +1,54 @@
+# Build and run the ledger service.
+#
+# Multi-stage so the runtime image carries no Maven, no sources and no build cache. Built from the
+# repository root, because the bootstrap module needs its sibling modules to compile:
+#
+#   docker build -f services/ledger/bootstrap/src/main/docker/Dockerfile.jvm -t lara/ledger .
+#
+# The build stage uses the official Maven image rather than the wrapper. The wrapper is right for
+# humans and for CI — it pins the version with a checksum and needs no local install — but its
+# bootstrap download is a network call that can truncate, and inside a container that failure
+# surfaces as "Failed to validate Maven distribution SHA-256" with no useful context.
+
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /build
+
+# Copy the build descriptors first so dependency resolution is cached independently of source
+# changes. Editing a Java file then costs a recompile, not a re-download.
+COPY pom.xml .
+COPY services/ledger/pom.xml                services/ledger/
+COPY services/ledger/domain/pom.xml         services/ledger/domain/
+COPY services/ledger/application/pom.xml    services/ledger/application/
+COPY services/ledger/infrastructure/pom.xml services/ledger/infrastructure/
+COPY services/ledger/bootstrap/pom.xml      services/ledger/bootstrap/
+
+# No `|| true` here. A failed dependency download must stop the build rather than leave a partial
+# cache for a later step to trip over.
+RUN --mount=type=cache,target=/root/.m2/repository \
+    mvn -B --no-transfer-progress dependency:go-offline -DskipTests
+
+COPY services services
+RUN --mount=type=cache,target=/root/.m2/repository \
+    mvn -B --no-transfer-progress clean package -DskipTests
+
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+
+# curl is here for the compose health check, nothing else.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Never run as root.
+RUN useradd --system --uid 1001 --create-home ledger
+USER 1001
+
+COPY --from=build --chown=1001 /build/services/ledger/bootstrap/target/quarkus-app/lib/      /app/lib/
+COPY --from=build --chown=1001 /build/services/ledger/bootstrap/target/quarkus-app/*.jar     /app/
+COPY --from=build --chown=1001 /build/services/ledger/bootstrap/target/quarkus-app/app/      /app/app/
+COPY --from=build --chown=1001 /build/services/ledger/bootstrap/target/quarkus-app/quarkus/  /app/quarkus/
+
+EXPOSE 8080
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75"
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]

@@ -11,7 +11,7 @@
 CREATE TABLE ledger_account (
     id            VARCHAR(64)              PRIMARY KEY,
     account_class VARCHAR(16)              NOT NULL,
-    currency      CHAR(3)                  NOT NULL,
+    currency      VARCHAR(3)               NOT NULL,
     opened_at     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
 
     CONSTRAINT ledger_account_id_format
@@ -49,7 +49,7 @@ CREATE TABLE posting_leg (
     account_id     VARCHAR(64) NOT NULL,
     side           VARCHAR(6)  NOT NULL,
     amount_minor   BIGINT      NOT NULL,
-    currency       CHAR(3)     NOT NULL,
+    currency       VARCHAR(3)  NOT NULL,
 
     CONSTRAINT posting_leg_transaction_fk
         FOREIGN KEY (transaction_id) REFERENCES ledger_transaction (id),

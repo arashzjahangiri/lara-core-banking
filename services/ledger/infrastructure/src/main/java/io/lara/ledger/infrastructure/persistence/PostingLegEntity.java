@@ -77,7 +77,7 @@ public class PostingLegEntity {
         return new PostingLeg(
                 AccountId.of(accountId),
                 side,
-                Money.of(amountMinor, Currency.getInstance(currency.trim())));
+                Money.of(amountMinor, Currency.getInstance(currency)));
     }
 
     short legIndex() {

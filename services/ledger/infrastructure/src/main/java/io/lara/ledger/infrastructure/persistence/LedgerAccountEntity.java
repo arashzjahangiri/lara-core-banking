@@ -44,7 +44,7 @@ public class LedgerAccountEntity {
     }
 
     public LedgerAccount toDomain() {
-        return new LedgerAccount(AccountId.of(id), accountClass, Currency.getInstance(currency.trim()));
+        return new LedgerAccount(AccountId.of(id), accountClass, Currency.getInstance(currency));
     }
 
     public String id() {

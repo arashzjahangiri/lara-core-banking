@@ -31,8 +31,8 @@ That single decision forces everything else to be real:
 | An auditor asks what a balance was last Tuesday | Append-only ledger, balances folded from postings at any instant |
 | Nobody may quietly rewrite history | `UPDATE` and `DELETE` refused by a database trigger |
 | Money must never be wrong by a cent | Integer minor units, exact allocation, no floating point anywhere |
+| Events must not publish if the transaction rolled back | Transactional outbox, captured by Debezium |
 | A transfer spans accounts, limits and the ledger | Saga with compensation *(Phase 3)* |
-| Events must not publish if the transaction rolled back | Transactional outbox *(Phase 2)* |
 
 These patterns are here because the problem demands them, not to demonstrate that they
 are known. Each one is argued in an [architecture decision record](docs/adr/), including
@@ -95,6 +95,31 @@ assets 500.00  =  liabilities (400.00 + 99.50)  +  income 0.50
 Port 8080 already taken? `LEDGER_PORT=8081 docker compose up`.
 OpenAPI is at `/q/openapi`, health at `/health/ready`.
 
+### Watch the events
+
+Every posting is published to Kafka, keyed by account:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 --topic ledger.account \
+  --from-beginning --property print.key=true
+```
+
+```
+"CUSTOMER000001"      => {"legs":[{"side":"DEBIT","amountMinorUnits":10000,...}], "reference":"DEMO-002", ...}
+"CUSTOMER000002"      => {"legs":[{"side":"CREDIT","amountMinorUnits":9950,...}], "reference":"DEMO-002", ...}
+"BANK.FEE.INCOME.EUR" => {"legs":[{"side":"CREDIT","amountMinorUnits":50,...}],   "reference":"DEMO-002", ...}
+```
+
+**The ledger never writes to Kafka.** It inserts a row into an `outbox` table in the *same*
+database transaction as the postings, and Debezium publishes what committed by reading the
+write-ahead log. There is no ordering of "write then publish" that survives a crash, so the
+problem is removed rather than mitigated. ([ADR-0004](docs/adr/0004-transactional-outbox-for-event-publishing.md))
+
+Try stopping it mid-flight — `docker compose stop connect`, post a few transactions, then
+`docker compose start connect`. Nothing is lost: the replication slot resumes exactly where
+it left off. Delivery is **at least once**, so consumers must deduplicate on event id.
+
 ## Architecture
 
 Four services, each owning its own PostgreSQL.
@@ -155,7 +180,7 @@ static final ArchRule domain_and_application_are_framework_free = noClasses()
 | Domain | Accounting invariants, money arithmetic, balance derivation. No container. | 127 |
 | Application | Use cases, driven by hand-written fakes. No mocking framework. | 24 |
 | Architecture | Layer dependencies, no floating point, no legacy date types. | 6 |
-| Integration | Real HTTP against a real PostgreSQL via Dev Services. | 18 |
+| Integration | Real HTTP against a real PostgreSQL via Dev Services, including the outbox. | 25 |
 
 Two are worth singling out.
 
@@ -179,7 +204,7 @@ UPDATE posting_leg  →  posting_leg is append-only; UPDATE is not permitted.
 | Phase | Contents | Status |
 | --- | --- | --- |
 | 1 | `ledger` service, chart of accounts, N-leg postings, idempotency, tests, CI, Compose | **Done** |
-| 2 | `accounts` service, Kafka, transactional outbox via Debezium, reversals, hash-chained audit | Next |
+| 2 | Transactional outbox via Debezium **(done)**; `accounts` service, reversals, hash-chained audit | In progress |
 | 3 | `payments` and `risk`, saga with compensation, scheme routing, four-eyes approval | Planned |
 | 4 | Keycloak and OIDC, BFF, React and MUI front end including the saga status view | Planned |
 | 5 | Kubernetes and Helm, OpenTelemetry, Prometheus, Grafana, native image benchmarks | Planned |

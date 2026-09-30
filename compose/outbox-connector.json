@@ -1,0 +1,41 @@
+{
+  "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+  "topic.prefix": "lara",
+
+  "database.hostname": "postgres",
+  "database.port": "5432",
+  "database.user": "ledger",
+  "database.password": "ledger",
+  "database.dbname": "ledger",
+
+  "plugin.name": "pgoutput",
+  "slot.name": "ledger_outbox",
+  "publication.name": "ledger_outbox_pub",
+
+  "table.include.list": "public.outbox",
+
+  "_comment_snapshot": "The outbox is a queue, not history. On first start there is nothing worth replaying, and a snapshot of rows that may already have been published would duplicate them.",
+  "snapshot.mode": "no_data",
+
+  "_comment_router": "The outbox event router unwraps the envelope: the Kafka key becomes aggregate_id (the account) so one account's movements share a partition and stay ordered, and the message value becomes the payload column rather than a Debezium change record.",
+  "transforms": "outbox",
+  "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+  "transforms.outbox.table.field.event.id": "id",
+  "transforms.outbox.table.field.event.key": "aggregate_id",
+  "transforms.outbox.table.field.event.type": "event_type",
+  "transforms.outbox.table.field.event.payload": "payload",
+  "_comment_timestamp": "created_at is deliberately NOT mapped as the event timestamp. The router requires an INT64 epoch and a TIMESTAMPTZ arrives as a string, so mapping it fails the task with 'Field created_at is not of type INT64'. Debezium's own source timestamp is used instead, and the business time is occurredAt inside the payload anyway.",
+  "transforms.outbox.route.by.field": "aggregate_type",
+  "transforms.outbox.route.topic.replacement": "${routedByValue}",
+
+  "_comment_deletes": "Pruning deletes published rows. Those deletes must not be published as events, or every consumer sees a tombstone for a movement that already happened. skipped.operations drops them at the connector so the router never sees one; table.op.invalid.behavior is only the fallback if one somehow reaches it, and it accepts warn|error|fatal rather than skip.",
+  "skipped.operations": "u,d,t",
+  "transforms.outbox.table.op.invalid.behavior": "warn",
+
+  "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "key.converter.schemas.enable": "false",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false",
+
+  "tasks.max": "1"
+}

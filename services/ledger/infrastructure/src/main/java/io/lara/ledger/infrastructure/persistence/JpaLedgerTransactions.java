@@ -29,9 +29,11 @@ public class JpaLedgerTransactions implements LedgerTransactions {
     private static final String REFERENCE_UNIQUE_CONSTRAINT = "ledger_transaction_reference_unique";
 
     private final EntityManager entityManager;
+    private final TransactionPostedEvents events;
 
-    public JpaLedgerTransactions(EntityManager entityManager) {
+    public JpaLedgerTransactions(EntityManager entityManager, TransactionPostedEvents events) {
         this.entityManager = entityManager;
+        this.events = events;
     }
 
     /**
@@ -51,6 +53,10 @@ public class JpaLedgerTransactions implements LedgerTransactions {
     public LedgerTransaction append(LedgerTransaction transaction) {
         try {
             entityManager.persist(LedgerTransactionEntity.from(transaction));
+            // Same persistence context, same database transaction. If the insert below fails —
+            // on the unique reference, say — these rows roll back with it, so no event can
+            // describe a posting that did not happen.
+            events.recordFor(transaction);
             entityManager.flush();
             return transaction;
         } catch (PersistenceException e) {

@@ -7,8 +7,9 @@ orchestration with sagas, and a clean-architecture codebase that keeps the frame
 of the domain.
 
 > **Phase 1 complete.** The `ledger` service runs end to end — post a transaction, read it
-> back, query a balance at any point in time — with 175 tests and a `docker compose up`
-> that works from a clean clone. See the [roadmap](#roadmap) for what comes next.
+> back, query a balance at any point in time, and every posting published to Kafka through a
+> transactional outbox — with 182 tests and a `docker compose up` that works from a clean
+> clone. See the [roadmap](#roadmap) for what comes next.
 
 ---
 

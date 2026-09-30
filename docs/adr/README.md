@@ -16,13 +16,13 @@ means adding a new record that references the old one.
 | [0008](0008-quarkus-confined-to-the-outer-layers.md) | Quarkus confined to the outer layers | Accepted |
 | [0009](0009-plain-jakarta-persistence-rather-than-panache.md) | Plain Jakarta Persistence rather than Panache | Accepted |
 | [0010](0010-money-as-integer-minor-units.md) | Money as integer minor units | Accepted |
+| [0011](0011-reversal-by-contra-entry.md) | Reversal by contra entry | Accepted |
 
 ## Planned
 
 Decisions already taken but not yet written up, because the code they describe does not
 exist yet:
 
-- Reversal by contra entry rather than update or delete — when reversals are implemented
 - Payment scheme routing, when `payments` gains more than one flow
 - Whether the `accounts` balance read model is rebuilt from events or maintained
   incrementally

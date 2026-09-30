@@ -17,6 +17,7 @@ import io.lara.ledger.application.LedgerAccounts;
 import io.lara.ledger.application.LedgerTransactions;
 import io.lara.ledger.application.PostTransaction;
 import io.lara.ledger.application.PostingLimits;
+import io.lara.ledger.application.ReverseTransaction;
 import io.lara.ledger.domain.Money;
 
 /**
@@ -88,5 +89,11 @@ public class UseCaseConfig {
     @ApplicationScoped
     FindTransaction findTransaction(LedgerTransactions transactions) {
         return new FindTransaction(transactions);
+    }
+
+    @Produces
+    @ApplicationScoped
+    ReverseTransaction reverseTransaction(LedgerTransactions transactions, Clock clock) {
+        return new ReverseTransaction(transactions, clock);
     }
 }

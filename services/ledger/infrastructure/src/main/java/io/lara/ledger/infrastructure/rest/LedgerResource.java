@@ -20,6 +20,7 @@ import io.lara.ledger.application.GetAccountBalance;
 import io.lara.ledger.application.PostTransaction;
 import io.lara.ledger.application.PostTransactionCommand;
 import io.lara.ledger.application.PostTransactionResult;
+import io.lara.ledger.application.ReverseTransaction;
 import io.lara.ledger.domain.AccountBalance;
 import io.lara.ledger.domain.AccountId;
 import io.lara.ledger.domain.EntrySide;
@@ -46,14 +47,17 @@ public class LedgerResource {
     private final PostTransaction postTransaction;
     private final FindTransaction findTransaction;
     private final GetAccountBalance getAccountBalance;
+    private final ReverseTransaction reverseTransaction;
 
     public LedgerResource(PostTransaction postTransaction,
             FindTransaction findTransaction,
-            GetAccountBalance getAccountBalance) {
+            GetAccountBalance getAccountBalance,
+            ReverseTransaction reverseTransaction) {
 
         this.postTransaction = postTransaction;
         this.findTransaction = findTransaction;
         this.getAccountBalance = getAccountBalance;
+        this.reverseTransaction = reverseTransaction;
     }
 
     /**
@@ -71,6 +75,25 @@ public class LedgerResource {
         PostTransactionResult result = postTransaction.post(new PostTransactionCommand(
                 TransactionReference.of(request.reference()),
                 toLegs(request.legs())));
+
+        return Response
+                .status(result.created() ? Response.Status.CREATED : Response.Status.OK)
+                .location(URI.create("/ledger/transactions/" + result.transaction().id()))
+                .entity(TransactionResponse.of(result.transaction()))
+                .build();
+    }
+
+    /**
+     * Reverses a transaction by posting its opposite.
+     *
+     * <p>201 when this call recorded the reversal, 409 when one already exists — reversing twice
+     * would restore the original movement, which is a new posting rather than an undo, and should
+     * be asked for deliberately if it is wanted.
+     */
+    @POST
+    @Path("/transactions/{id}/reversal")
+    public Response reverse(@PathParam("id") String id) {
+        PostTransactionResult result = reverseTransaction.reverse(TransactionId.of(id));
 
         return Response
                 .status(result.created() ? Response.Status.CREATED : Response.Status.OK)

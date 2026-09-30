@@ -39,6 +39,14 @@ public class PostingRejectedMapper implements ExceptionMapper<PostingRejectedExc
             // existing state, and the one case a caller must not simply retry.
             case PostingRejectedException.ReferenceReused e ->
                 new Status(Response.Status.CONFLICT.getStatusCode(), "reference-reused");
+
+            // Unlike an unknown account, this one IS addressed wrongly: the path names a
+            // transaction that does not exist, so 404 is right.
+            case PostingRejectedException.UnknownTransaction e ->
+                new Status(Response.Status.NOT_FOUND.getStatusCode(), "unknown-transaction");
+
+            case PostingRejectedException.AlreadyReversed e ->
+                new Status(Response.Status.CONFLICT.getStatusCode(), "already-reversed");
         };
 
         return Response.status(status.code())

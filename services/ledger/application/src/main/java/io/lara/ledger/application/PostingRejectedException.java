@@ -21,10 +21,55 @@ public abstract sealed class PostingRejectedException extends RuntimeException
         permits PostingRejectedException.UnknownAccount,
         PostingRejectedException.AccountCurrencyMismatch,
         PostingRejectedException.PostingLimitExceeded,
-        PostingRejectedException.ReferenceReused {
+        PostingRejectedException.ReferenceReused,
+        PostingRejectedException.UnknownTransaction,
+        PostingRejectedException.AlreadyReversed {
 
     private PostingRejectedException(String message) {
         super(message);
+    }
+
+    /** There is nothing to reverse under that identity. */
+    public static final class UnknownTransaction extends PostingRejectedException {
+
+        private final transient io.lara.ledger.domain.TransactionId id;
+
+        UnknownTransaction(io.lara.ledger.domain.TransactionId id) {
+            super("no such transaction: " + id);
+            this.id = id;
+        }
+
+        public io.lara.ledger.domain.TransactionId id() {
+            return id;
+        }
+    }
+
+    /**
+     * A reversal is already recorded, or the target is itself a reversal.
+     *
+     * <p>Reversing twice would restore the original movement, which is a new posting rather than an
+     * undo. If that is genuinely wanted it should be posted as one, deliberately.
+     */
+    public static final class AlreadyReversed extends PostingRejectedException {
+
+        private final transient io.lara.ledger.domain.TransactionId id;
+        private final transient io.lara.ledger.domain.TransactionReference reversal;
+
+        AlreadyReversed(io.lara.ledger.domain.TransactionId id,
+                io.lara.ledger.domain.TransactionReference reversal) {
+
+            super("transaction " + id + " is already reversed by " + reversal);
+            this.id = id;
+            this.reversal = reversal;
+        }
+
+        public io.lara.ledger.domain.TransactionId id() {
+            return id;
+        }
+
+        public io.lara.ledger.domain.TransactionReference reversal() {
+            return reversal;
+        }
     }
 
     /**

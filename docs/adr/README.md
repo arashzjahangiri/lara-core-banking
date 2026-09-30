@@ -13,15 +13,16 @@ means adding a new record that references the old one.
 | [0005](0005-customer-deposits-are-liabilities.md) | Customer deposits are liabilities | Accepted |
 | [0006](0006-transactions-hold-n-legs-that-sum-to-zero.md) | Transactions hold N legs that sum to zero | Accepted |
 | [0007](0007-idempotency-by-caller-supplied-reference.md) | Idempotency by caller-supplied reference | Accepted |
+| [0008](0008-quarkus-confined-to-the-outer-layers.md) | Quarkus confined to the outer layers | Accepted |
+| [0009](0009-plain-jakarta-persistence-rather-than-panache.md) | Plain Jakarta Persistence rather than Panache | Accepted |
+| [0010](0010-money-as-integer-minor-units.md) | Money as integer minor units | Accepted |
 
 ## Planned
 
-Decisions already taken but not yet written up, mostly because the code they describe
-does not exist yet:
+Decisions already taken but not yet written up, because the code they describe does not
+exist yet:
 
-- Why clean architecture here, and what the duplication costs
-- Why Quarkus is confined to `infrastructure` and `bootstrap`
-- Why the application layer is annotation-free
-- Why not Panache
-- Why integer minor units rather than `BigDecimal`
-- Reversal by contra entry rather than update or delete
+- Reversal by contra entry rather than update or delete — when reversals are implemented
+- Payment scheme routing, when `payments` gains more than one flow
+- Whether the `accounts` balance read model is rebuilt from events or maintained
+  incrementally

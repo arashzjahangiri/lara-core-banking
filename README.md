@@ -6,10 +6,10 @@ A core banking platform built on Quarkus: an immutable double-entry ledger, paym
 orchestration with sagas, and a clean-architecture codebase that keeps the framework out
 of the domain.
 
-> **Phase 1 complete.** The `ledger` service runs end to end — post a transaction, read it
-> back, query a balance at any point in time, and every posting published to Kafka through a
-> transactional outbox — with 182 tests and a `docker compose up` that works from a clean
-> clone. See the [roadmap](#roadmap) for what comes next.
+> **Phases 1 and 2 complete.** Two services, 347 tests, and a `docker compose up` that works from
+> a clean clone. The `ledger` posts balanced double-entry transactions and publishes them through
+> a transactional outbox; `accounts` consumes those events into a balance read model, idempotently.
+> See the [roadmap](#roadmap) for what comes next.
 
 ---
 
@@ -128,7 +128,7 @@ Four services, each owning its own PostgreSQL.
 | Service | Responsibility | Status |
 | --- | --- | --- |
 | `ledger` | Append-only double-entry postings. The only service that may write money. | **Built** |
-| `accounts` | Customers, accounts, IBANs, KYC state. | Phase 2 |
+| `accounts` | Customers, accounts, IBANs, KYC state, balance read model. | **Built** |
 | `payments` | Orchestrates transfers: validate, screen, post, confirm or compensate. | Phase 3 |
 | `risk` | Limits, velocity rules, sanctions screening. | Phase 3 |
 
@@ -181,7 +181,8 @@ static final ArchRule domain_and_application_are_framework_free = noClasses()
 | Domain | Accounting invariants, money arithmetic, balance derivation. No container. | 127 |
 | Application | Use cases, driven by hand-written fakes. No mocking framework. | 24 |
 | Architecture | Layer dependencies, no floating point, no legacy date types. | 6 |
-| Integration | Real HTTP against a real PostgreSQL via Dev Services, including the outbox. | 25 |
+| Integration | Real HTTP against a real PostgreSQL via Dev Services, including the outbox. | 36 |
+| Contract | Consumer-driven Pact between `accounts` and `ledger`, verified both ways. | 2 |
 
 Two are worth singling out.
 
@@ -205,7 +206,7 @@ UPDATE posting_leg  →  posting_leg is append-only; UPDATE is not permitted.
 | Phase | Contents | Status |
 | --- | --- | --- |
 | 1 | `ledger` service, chart of accounts, N-leg postings, idempotency, tests, CI, Compose | **Done** |
-| 2 | Transactional outbox via Debezium **(done)**; `accounts` service, reversals, hash-chained audit | In progress |
+| 2 | Outbox via Debezium, `accounts` service, balance read model, reversals, hash-chained audit, business calendar, Pact contracts | **Done** |
 | 3 | `payments` and `risk`, saga with compensation, scheme routing, four-eyes approval | Planned |
 | 4 | Keycloak and OIDC, BFF, React and MUI front end including the saga status view | Planned |
 | 5 | Kubernetes and Helm, OpenTelemetry, Prometheus, Grafana, native image benchmarks | Planned |
@@ -231,6 +232,14 @@ observability for free. ([ADR-0003](docs/adr/0003-orchestrated-saga-rather-than-
 
 **There is no authentication yet.** Phase 4. Everything is currently open, which is fine
 for a local stack and would not be fine anywhere else.
+
+**The hash chain detects tampering, it does not prevent it.** Anyone able to rewrite rows can
+recompute the chain forward. Stopping that needs the head hash published somewhere the operator
+does not control. ([ADR-0012](docs/adr/0012-hash-chained-ledger.md))
+
+**Appending takes a row lock on the chain head.** One verifiable sequence costs a serialised
+write path. Per-account chains would remove the lock and give up the global order — the obvious
+move if it ever becomes the bottleneck.
 
 **Single currency per transaction.** Foreign exchange needs two transactions against a
 clearing account plus an explicit rate record, which is not yet

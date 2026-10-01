@@ -20,6 +20,8 @@
   <modules>
     <module>services/accounts</module>
     <module>services/ledger</module>
+    <module>services/risk</module>
+    <module>services/payments</module>
   </modules>
 
   <properties>

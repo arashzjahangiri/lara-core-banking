@@ -1,9 +1,9 @@
-# Build and run the ledger service.
+# Build and run the accounts service.
 #
 # Multi-stage so the runtime image carries no Maven, no sources and no build cache. Built from the
 # repository root, because the bootstrap module needs its sibling modules to compile:
 #
-#   docker build -f services/ledger/bootstrap/src/main/docker/Dockerfile.jvm -t lara/ledger .
+#   docker build -f services/accounts/bootstrap/src/main/docker/Dockerfile.jvm -t lara/accounts .
 #
 # The build stage uses the official Maven image rather than the wrapper. The wrapper is right for
 # humans and for CI — it pins the version with a checksum and needs no local install — but its
@@ -59,15 +59,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Never run as root.
-RUN useradd --system --uid 1001 --create-home ledger
+RUN useradd --system --uid 1001 --create-home accounts
 USER 1001
 
-COPY --from=build --chown=1001 /build/services/ledger/bootstrap/target/quarkus-app/lib/      /app/lib/
-COPY --from=build --chown=1001 /build/services/ledger/bootstrap/target/quarkus-app/*.jar     /app/
-COPY --from=build --chown=1001 /build/services/ledger/bootstrap/target/quarkus-app/app/      /app/app/
-COPY --from=build --chown=1001 /build/services/ledger/bootstrap/target/quarkus-app/quarkus/  /app/quarkus/
+COPY --from=build --chown=1001 /build/services/accounts/bootstrap/target/quarkus-app/lib/      /app/lib/
+COPY --from=build --chown=1001 /build/services/accounts/bootstrap/target/quarkus-app/*.jar     /app/
+COPY --from=build --chown=1001 /build/services/accounts/bootstrap/target/quarkus-app/app/      /app/app/
+COPY --from=build --chown=1001 /build/services/accounts/bootstrap/target/quarkus-app/quarkus/  /app/quarkus/
 
-EXPOSE 8080
+EXPOSE 8090
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75"
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/quarkus-run.jar"]

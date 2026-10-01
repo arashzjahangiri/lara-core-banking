@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Marks this module as a bean archive so Quarkus indexes it.
+
+  Without this, the @ApplicationScoped adapters here are invisible and the build fails with an
+  unsatisfied dependency for whichever port is missing a binding — which is the build-time
+  dependency injection doing its job: a missing binding is a failed build, not a null at startup.
+
+  Deliberately empty. A bean-discovery mode of "annotated" is the default and is what we want.
+-->
+<beans xmlns="https://jakarta.ee/xml/ns/jakartaee"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/beans_3_0.xsd"
+       version="3.0" bean-discovery-mode="annotated">
+</beans>

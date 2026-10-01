@@ -58,7 +58,15 @@ public class TransactionPostedEvents {
                 payloadFor(transaction, account, legs))));
     }
 
-    private String payloadFor(LedgerTransaction transaction, AccountId account, List<PostingLeg> legs) {
+    /**
+     * The exact JSON published for one account of a transaction.
+     *
+     * <p>Visible beyond this class so the Pact provider test can verify the <em>real</em>
+     * serialiser against the consumer's contract. A provider test that rebuilt the payload itself
+     * would pass happily while this method changed shape underneath it, which is the one failure
+     * a contract test exists to prevent.
+     */
+    public String payloadFor(LedgerTransaction transaction, AccountId account, List<PostingLeg> legs) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("transactionId", transaction.id().toString());
         payload.put("reference", transaction.reference().value());

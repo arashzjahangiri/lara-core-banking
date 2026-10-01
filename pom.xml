@@ -12,9 +12,14 @@
   <name>Lara Core Banking</name>
   <description>Core banking platform: double-entry ledger, payment orchestration, clean architecture</description>
 
+  <!--
+    Accounts builds first on purpose. Its consumer test writes the pact that the ledger's provider
+    test then verifies, so the reverse order would verify a stale pact — or, on a clean checkout,
+    find none at all and pass by doing nothing.
+  -->
   <modules>
-    <module>services/ledger</module>
     <module>services/accounts</module>
+    <module>services/ledger</module>
   </modules>
 
   <properties>
@@ -28,6 +33,7 @@
 
     <archunit.version>1.5.1</archunit.version>
     <assertj.version>3.27.7</assertj.version>
+    <pact.version>4.7.5</pact.version>
 
     <maven-compiler-plugin.version>3.14.0</maven-compiler-plugin.version>
     <maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
@@ -51,6 +57,22 @@
         <groupId>org.assertj</groupId>
         <artifactId>assertj-core</artifactId>
         <version>${assertj.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <!--
+        Consumer and provider must use the same Pact version, or a pact written by one is not
+        readable by the other. Managed here so the two services cannot drift apart.
+      -->
+      <dependency>
+        <groupId>au.com.dius.pact.consumer</groupId>
+        <artifactId>junit5</artifactId>
+        <version>${pact.version}</version>
+        <scope>test</scope>
+      </dependency>
+      <dependency>
+        <groupId>au.com.dius.pact.provider</groupId>
+        <artifactId>junit5</artifactId>
+        <version>${pact.version}</version>
         <scope>test</scope>
       </dependency>
 
@@ -85,6 +107,16 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
           <version>${maven-surefire-plugin.version}</version>
+          <configuration>
+            <systemPropertyVariables>
+              <!--
+                One pact directory for the whole repository. The consumer writes here and the
+                provider verifies from here, so the provider cannot pass against a stale copy
+                checked in beside it.
+              -->
+              <pact.rootDir>${maven.multiModuleProjectDirectory}/build/pacts</pact.rootDir>
+            </systemPropertyVariables>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>

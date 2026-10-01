@@ -98,6 +98,29 @@ final class LedgerDtos {
         }
     }
 
+    /** Whether the hash chain still adds up, and where it stops if it does not. */
+    record IntegrityResponse(boolean intact, long transactionsChecked, BreakResponse firstBreak) {
+
+        static IntegrityResponse of(io.lara.ledger.application.ChainIntegrity integrity) {
+            return new IntegrityResponse(
+                    integrity.isIntact(),
+                    integrity.transactionsChecked(),
+                    integrity.firstBreak().map(BreakResponse::of).orElse(null));
+        }
+    }
+
+    record BreakResponse(long sequence, String transaction, String reason, String expected, String actual) {
+
+        static BreakResponse of(io.lara.ledger.application.ChainIntegrity.Break failure) {
+            return new BreakResponse(
+                    failure.sequence(),
+                    failure.transaction().toString(),
+                    failure.reason().name(),
+                    failure.expected(),
+                    failure.actual());
+        }
+    }
+
     /** A problem the caller can act on, rather than a stack trace. */
     record ProblemResponse(String error, String detail) {
     }

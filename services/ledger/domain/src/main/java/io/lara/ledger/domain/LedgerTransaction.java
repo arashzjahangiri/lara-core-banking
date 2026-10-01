@@ -1,6 +1,7 @@
 package io.lara.ledger.domain;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Currency;
 import java.util.List;
 import java.util.Objects;
@@ -38,6 +39,15 @@ public record LedgerTransaction(TransactionId id,
         Objects.requireNonNull(reference, "transaction reference must not be null");
         Objects.requireNonNull(occurredAt, "occurredAt must not be null");
         Objects.requireNonNull(legs, "legs must not be null");
+
+        // Truncated to microseconds, which is the finest precision the ledger records.
+        //
+        // Not cosmetic. A Java Instant carries nanoseconds and PostgreSQL timestamptz stores
+        // microseconds, so an untruncated instant changes as it round-trips through the database.
+        // The hash chain covers occurredAt, so that silent change would break the chain on data
+        // nobody had touched. Declaring the precision here makes the in-memory value and the
+        // stored value the same thing.
+        occurredAt = occurredAt.truncatedTo(ChronoUnit.MICROS);
 
         legs = List.copyOf(legs);
 

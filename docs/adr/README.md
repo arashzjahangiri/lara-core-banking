@@ -17,6 +17,7 @@ means adding a new record that references the old one.
 | [0009](0009-plain-jakarta-persistence-rather-than-panache.md) | Plain Jakarta Persistence rather than Panache | Accepted |
 | [0010](0010-money-as-integer-minor-units.md) | Money as integer minor units | Accepted |
 | [0011](0011-reversal-by-contra-entry.md) | Reversal by contra entry | Accepted |
+| [0012](0012-hash-chained-ledger.md) | Hash-chained ledger | Accepted |
 
 ## Planned
 

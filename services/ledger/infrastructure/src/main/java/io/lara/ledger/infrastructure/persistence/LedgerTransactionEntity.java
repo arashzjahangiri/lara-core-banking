@@ -43,6 +43,15 @@ public class LedgerTransactionEntity {
     @Column(name = "recorded_at", nullable = false, insertable = false, updatable = false)
     private Instant recordedAt;
 
+    @Column(name = "chain_sequence", nullable = false, updatable = false)
+    private long chainSequence;
+
+    @Column(name = "content_hash", length = 64, updatable = false)
+    private String contentHash;
+
+    @Column(name = "previous_hash", length = 64, updatable = false)
+    private String previousHash;
+
     @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
     private List<PostingLegEntity> legs = new ArrayList<>();
 
@@ -78,5 +87,29 @@ public class LedgerTransactionEntity {
 
     public Instant recordedAt() {
         return recordedAt;
+    }
+
+    /**
+     * Links this transaction into the hash chain. Called while the chain head row is locked, so
+     * the sequence and the predecessor cannot be claimed by two writers at once.
+     */
+    void chainTo(long sequence, io.lara.ledger.domain.TransactionHash content,
+            io.lara.ledger.domain.TransactionHash previous) {
+
+        this.chainSequence = sequence;
+        this.contentHash = content.value();
+        this.previousHash = previous.value();
+    }
+
+    public long chainSequence() {
+        return chainSequence;
+    }
+
+    public String contentHash() {
+        return contentHash;
+    }
+
+    public String previousHash() {
+        return previousHash;
     }
 }

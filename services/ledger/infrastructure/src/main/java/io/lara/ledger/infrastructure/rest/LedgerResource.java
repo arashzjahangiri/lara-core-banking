@@ -21,6 +21,7 @@ import io.lara.ledger.application.PostTransaction;
 import io.lara.ledger.application.PostTransactionCommand;
 import io.lara.ledger.application.PostTransactionResult;
 import io.lara.ledger.application.ReverseTransaction;
+import io.lara.ledger.application.VerifyChain;
 import io.lara.ledger.domain.AccountBalance;
 import io.lara.ledger.domain.AccountId;
 import io.lara.ledger.domain.EntrySide;
@@ -29,6 +30,7 @@ import io.lara.ledger.domain.PostingLeg;
 import io.lara.ledger.domain.TransactionId;
 import io.lara.ledger.domain.TransactionReference;
 import io.lara.ledger.infrastructure.rest.LedgerDtos.BalanceResponse;
+import io.lara.ledger.infrastructure.rest.LedgerDtos.IntegrityResponse;
 import io.lara.ledger.infrastructure.rest.LedgerDtos.PostTransactionRequest;
 import io.lara.ledger.infrastructure.rest.LedgerDtos.PostingLegRequest;
 import io.lara.ledger.infrastructure.rest.LedgerDtos.TransactionResponse;
@@ -48,16 +50,19 @@ public class LedgerResource {
     private final FindTransaction findTransaction;
     private final GetAccountBalance getAccountBalance;
     private final ReverseTransaction reverseTransaction;
+    private final VerifyChain verifyChain;
 
     public LedgerResource(PostTransaction postTransaction,
             FindTransaction findTransaction,
             GetAccountBalance getAccountBalance,
-            ReverseTransaction reverseTransaction) {
+            ReverseTransaction reverseTransaction,
+            VerifyChain verifyChain) {
 
         this.postTransaction = postTransaction;
         this.findTransaction = findTransaction;
         this.getAccountBalance = getAccountBalance;
         this.reverseTransaction = reverseTransaction;
+        this.verifyChain = verifyChain;
     }
 
     /**
@@ -139,6 +144,19 @@ public class LedgerResource {
                 ? getAccountBalance.current(account)
                 : getAccountBalance.asAt(account, Instant.parse(asOf));
         return BalanceResponse.of(balance);
+    }
+
+    /**
+     * Whether the hash chain still adds up.
+     *
+     * <p>Returns 200 either way — a broken chain is a finding, not a failure of this request, and
+     * a monitor should read the body rather than the status. Detection only: anyone able to
+     * rewrite rows can recompute the chain forward, which ADR-0012 says plainly.
+     */
+    @GET
+    @Path("/integrity")
+    public IntegrityResponse integrity() {
+        return IntegrityResponse.of(verifyChain.verify());
     }
 
     private static List<PostingLeg> toLegs(List<PostingLegRequest> legs) {

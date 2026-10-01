@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceException;
 import jakarta.transaction.Transactional;
 
@@ -14,6 +15,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import io.lara.ledger.application.LedgerTransactions;
 import io.lara.ledger.domain.AccountId;
 import io.lara.ledger.domain.LedgerTransaction;
+import io.lara.ledger.domain.TransactionHash;
 import io.lara.ledger.domain.TransactionId;
 import io.lara.ledger.domain.TransactionReference;
 
@@ -52,7 +54,22 @@ public class JpaLedgerTransactions implements LedgerTransactions {
     @Transactional
     public LedgerTransaction append(LedgerTransaction transaction) {
         try {
-            entityManager.persist(LedgerTransactionEntity.from(transaction));
+            LedgerTransactionEntity entity = LedgerTransactionEntity.from(transaction);
+
+            // Lock the chain head for the rest of this database transaction. Two concurrent
+            // appends would otherwise both read the same previous hash and fork the chain, and
+            // verification would then fail on data nobody tampered with.
+            ChainHeadEntity head = entityManager.find(
+                    ChainHeadEntity.class, ChainHeadEntity.SINGLETON_ID, LockModeType.PESSIMISTIC_WRITE);
+
+            TransactionHash previous = head.lastHash();
+            TransactionHash content = TransactionHash.of(transaction, previous);
+            long sequence = head.nextSequence();
+
+            entity.chainTo(sequence, content, previous);
+            entityManager.persist(entity);
+            head.advanceTo(content, sequence);
+
             // Same persistence context, same database transaction. If the insert below fails —
             // on the unique reference, say — these rows roll back with it, so no event can
             // describe a posting that did not happen.

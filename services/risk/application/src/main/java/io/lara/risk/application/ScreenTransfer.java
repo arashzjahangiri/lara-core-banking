@@ -86,8 +86,9 @@ public final class ScreenTransfer {
                 screening.screen(request, applicable, alreadyToday, sanctions.current());
         RecordedScreening recorded = RecordedScreening.of(request, decision, now);
 
-        decisions.record(recorded);
-        return recorded;
+        // The stored decision, which is not always the one just built: a concurrent request with
+        // the same reference may have got there first, and its answer is the real one.
+        return decisions.record(recorded);
     }
 
     /**

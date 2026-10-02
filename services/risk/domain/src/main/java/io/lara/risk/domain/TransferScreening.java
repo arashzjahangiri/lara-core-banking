@@ -48,9 +48,17 @@ public final class TransferScreening {
         ScreeningDecision byLimit = limits.screen(request.amount(), alreadyScreenedToday);
         ScreeningDecision bySanctions = sanctions.screen(request.beneficiary());
 
-        // Sanctions first, so that when both block, the recorded reason is the sanctions match.
-        // That is the one a compliance officer needs to see, and a limit breach is the easier of
-        // the two for a customer to discover on their own.
-        return ScreeningDecision.mostRestrictive(bySanctions, byLimit);
+        // The stricter outcome always wins. The argument order only decides which reason is kept
+        // when the two agree, and which one is more useful depends on what they agreed on.
+        //
+        // Agreeing to stop: cite the sanctions match. That is what a compliance officer needs,
+        // and a limit breach is the easier of the two for a customer to work out unaided.
+        //
+        // Agreeing to proceed: cite the limit. "No sanctions match" is true but says nothing
+        // about whether the customer had room for this payment, which is the question a support
+        // agent is actually asked.
+        return bySanctions.outcome() == ScreeningOutcome.ALLOW
+                ? ScreeningDecision.mostRestrictive(byLimit, bySanctions)
+                : ScreeningDecision.mostRestrictive(bySanctions, byLimit);
     }
 }

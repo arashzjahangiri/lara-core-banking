@@ -282,6 +282,19 @@ class TransferScreeningTest {
             assertThat(decision.outcome()).isEqualTo(ScreeningOutcome.ALLOW);
         }
 
+        /**
+         * When both allow, the limit's reason is the one kept. "No sanctions match" is true but
+         * says nothing about whether the customer had room for this payment, which is the
+         * question a support agent is actually asked.
+         */
+        @Test
+        void reports_the_limit_reason_when_both_checks_allow() {
+            ScreeningDecision decision =
+                    screening.screen(request(10_000, "Jens Hansen"), LIMITS, NOTHING_YET, list);
+
+            assertThat(decision.reason()).contains("within the daily limit");
+        }
+
         /** The limit is comfortable; the beneficiary is not. Sanctions must not be overruled. */
         @Test
         void blocks_a_small_transfer_to_a_sanctioned_party() {

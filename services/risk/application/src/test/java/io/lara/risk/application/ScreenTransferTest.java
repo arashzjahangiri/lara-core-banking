@@ -286,9 +286,13 @@ class ScreenTransferTest {
                     .findFirst();
         }
 
+        /** Mirrors the real adapter: the first write for a reference wins, and wins for good. */
         @Override
-        public void record(RecordedScreening screening) {
-            recorded.add(screening);
+        public RecordedScreening record(RecordedScreening screening) {
+            return findByReference(screening.reference()).orElseGet(() -> {
+                recorded.add(screening);
+                return screening;
+            });
         }
     }
 }

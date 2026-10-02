@@ -18,10 +18,17 @@ public interface ScreeningDecisions {
     Optional<RecordedScreening> findByReference(ScreeningReference reference);
 
     /**
-     * Writes a decision down.
+     * Writes a decision down and returns the one that is actually stored.
      *
-     * <p>Implementations must treat a duplicate reference as a conflict rather than an overwrite.
-     * A decision that has been returned to a caller is history, and history does not get edited.
+     * <p>The return value is not ceremony. Two requests carrying the same reference can both find
+     * nothing on the lookup above and both arrive here, and exactly one of them can win. The
+     * loser must be told what the winner decided rather than its own answer, because its answer
+     * was never recorded and quoting it would hand a caller a decision that does not exist.
+     *
+     * <p>Implementations must never overwrite an existing row. A decision that has been returned
+     * to a caller is history, and history does not get edited.
+     *
+     * @return the stored decision: the one just written, or the one that was already there
      */
-    void record(RecordedScreening screening);
+    RecordedScreening record(RecordedScreening screening);
 }

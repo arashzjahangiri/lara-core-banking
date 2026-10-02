@@ -46,6 +46,7 @@ public final class Transfer {
     private final Iban debtor;
     private final Iban creditor;
     private final Money amount;
+    private final RoutingDecision routing;
     private final String requestedBy;
     private final Instant requestedAt;
     private final Clock clock;
@@ -59,6 +60,7 @@ public final class Transfer {
             Iban debtor,
             Iban creditor,
             Money amount,
+            RoutingDecision routing,
             String requestedBy,
             Instant requestedAt,
             TransferState state,
@@ -70,6 +72,7 @@ public final class Transfer {
         this.debtor = Objects.requireNonNull(debtor, "debtor must not be null");
         this.creditor = Objects.requireNonNull(creditor, "creditor must not be null");
         this.amount = Objects.requireNonNull(amount, "amount must not be null");
+        this.routing = Objects.requireNonNull(routing, "routing must not be null");
         this.requestedBy = Objects.requireNonNull(requestedBy, "requestedBy must not be null");
         this.requestedAt = Objects.requireNonNull(requestedAt, "requestedAt must not be null");
         this.state = Objects.requireNonNull(state, "state must not be null");
@@ -82,6 +85,14 @@ public final class Transfer {
         if (debtor.equals(creditor)) {
             throw new IllegalArgumentException("a transfer must have different debtor and creditor: " + debtor);
         }
+        // Money refuses to add across currencies, so a mismatch here would not surface until
+        // totalDebit() was called — somewhere downstream, with nothing pointing back to the
+        // routing decision that caused it.
+        if (!routing.fee().currency().equals(amount.currency())) {
+            throw new IllegalArgumentException(
+                    "fee is in " + routing.fee().currency().getCurrencyCode()
+                            + " but the transfer is in " + amount.currency().getCurrencyCode());
+        }
     }
 
     /**
@@ -92,7 +103,13 @@ public final class Transfer {
      * passed in is a value that can vary.
      */
     public static Transfer request(
-            TransferId id, Iban debtor, Iban creditor, Money amount, String requestedBy, Clock clock) {
+            TransferId id,
+            Iban debtor,
+            Iban creditor,
+            Money amount,
+            RoutingDecision routing,
+            String requestedBy,
+            Clock clock) {
 
         Objects.requireNonNull(clock, "clock must not be null");
         Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
@@ -103,6 +120,7 @@ public final class Transfer {
                 debtor,
                 creditor,
                 amount,
+                routing,
                 requestedBy,
                 now,
                 new TransferState.Requested(),
@@ -123,6 +141,7 @@ public final class Transfer {
             Iban debtor,
             Iban creditor,
             Money amount,
+            RoutingDecision routing,
             String requestedBy,
             Instant requestedAt,
             TransferState state,
@@ -130,7 +149,8 @@ public final class Transfer {
             Clock clock) {
 
         return new Transfer(
-                id, reference, debtor, creditor, amount, requestedBy, requestedAt, state, history, clock);
+                id, reference, debtor, creditor, amount, routing, requestedBy, requestedAt,
+                state, history, clock);
     }
 
     // ---------------------------------------------------------------- transitions
@@ -234,8 +254,36 @@ public final class Transfer {
         return creditor;
     }
 
+    /** What the creditor receives. The debtor pays this plus the fee — see {@link #totalDebit()}. */
     public Money amount() {
         return amount;
+    }
+
+    public RoutingDecision routing() {
+        return routing;
+    }
+
+    public TransferScheme scheme() {
+        return routing.scheme();
+    }
+
+    public Money fee() {
+        return routing.fee();
+    }
+
+    public java.time.LocalDate valueDate() {
+        return routing.valueDate();
+    }
+
+    /**
+     * What leaves the debtor's account: the amount plus the fee.
+     *
+     * <p>Kept distinct from {@link #amount()} because the two differ and conflating them is how a
+     * fee gets charged to the wrong side. The creditor is credited the amount; the debtor is
+     * debited this; the difference is the bank's fee income, and the ledger entry has three legs.
+     */
+    public Money totalDebit() {
+        return amount.plus(routing.fee());
     }
 
     public String requestedBy() {

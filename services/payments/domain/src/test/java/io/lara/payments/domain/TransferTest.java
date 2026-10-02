@@ -40,8 +40,14 @@ class TransferTest {
     private static final Money AMOUNT = Money.of(125_000, "EUR");
     private static final String MAKER = "arash";
 
+    /** A SEPA routing decision; the router itself is tested separately. */
+    private static final RoutingDecision ROUTING = new RoutingDecision(
+            TransferScheme.SEPA_CREDIT_TRANSFER,
+            Money.of(50, "EUR"),
+            java.time.LocalDate.of(2026, 10, 2));
+
     private static Transfer requested() {
-        return Transfer.request(TransferId.newId(), DEBTOR, CREDITOR, AMOUNT, MAKER, CLOCK);
+        return Transfer.request(TransferId.newId(), DEBTOR, CREDITOR, AMOUNT, ROUTING, MAKER, CLOCK);
     }
 
     private static Transfer inState(TransferStatus status) {
@@ -103,8 +109,8 @@ class TransferTest {
         void derives_its_posting_reference_from_its_id() {
             TransferId id = TransferId.newId();
 
-            Transfer first = Transfer.request(id, DEBTOR, CREDITOR, AMOUNT, MAKER, CLOCK);
-            Transfer second = Transfer.request(id, DEBTOR, CREDITOR, AMOUNT, MAKER, CLOCK);
+            Transfer first = Transfer.request(id, DEBTOR, CREDITOR, AMOUNT, ROUTING, MAKER, CLOCK);
+            Transfer second = Transfer.request(id, DEBTOR, CREDITOR, AMOUNT, ROUTING, MAKER, CLOCK);
 
             // The ledger deduplicates on this value, so two attempts at the same transfer must
             // quote the same reference or the idempotency guarantee buys nothing.
@@ -116,12 +122,12 @@ class TransferTest {
         void refuses_a_zero_or_negative_amount() {
             assertThatIllegalArgumentException()
                     .isThrownBy(() -> Transfer.request(
-                            TransferId.newId(), DEBTOR, CREDITOR, Money.of(0, "EUR"), MAKER, CLOCK))
+                            TransferId.newId(), DEBTOR, CREDITOR, Money.of(0, "EUR"), ROUTING, MAKER, CLOCK))
                     .withMessageContaining("positive");
 
             assertThatIllegalArgumentException()
                     .isThrownBy(() -> Transfer.request(
-                            TransferId.newId(), DEBTOR, CREDITOR, Money.of(-1, "EUR"), MAKER, CLOCK))
+                            TransferId.newId(), DEBTOR, CREDITOR, Money.of(-1, "EUR"), ROUTING, MAKER, CLOCK))
                     .withMessageContaining("positive");
         }
 
@@ -129,7 +135,7 @@ class TransferTest {
         void refuses_to_send_money_to_the_account_it_came_from() {
             assertThatIllegalArgumentException()
                     .isThrownBy(() -> Transfer.request(
-                            TransferId.newId(), DEBTOR, DEBTOR, AMOUNT, MAKER, CLOCK))
+                            TransferId.newId(), DEBTOR, DEBTOR, AMOUNT, ROUTING, MAKER, CLOCK))
                     .withMessageContaining("different debtor and creditor");
         }
     }
@@ -439,7 +445,7 @@ class TransferTest {
             };
 
             Transfer transfer = Transfer.request(
-                    TransferId.newId(), DEBTOR, CREDITOR, AMOUNT, MAKER, moving);
+                    TransferId.newId(), DEBTOR, CREDITOR, AMOUNT, ROUTING, MAKER, moving);
             transfer.startScreening();
             now.set(later);
             transfer.startPosting();
@@ -468,6 +474,7 @@ class TransferTest {
                     original.debtor(),
                     original.creditor(),
                     original.amount(),
+                    original.routing(),
                     original.requestedBy(),
                     original.requestedAt(),
                     original.state(),

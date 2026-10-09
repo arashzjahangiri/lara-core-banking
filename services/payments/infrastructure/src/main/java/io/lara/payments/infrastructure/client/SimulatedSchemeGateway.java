@@ -1,6 +1,8 @@
 package io.lara.payments.infrastructure.client;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -40,8 +42,8 @@ public class SimulatedSchemeGateway implements SchemeGateway {
      * compensation tests flaky and the demo unrepeatable, and "sometimes it reverses" is not a
      * demonstration of anything.
      */
-    @ConfigProperty(name = "payments.scheme.rejected-ibans", defaultValue = "")
-    String rejectedIbans;
+    @ConfigProperty(name = "payments.scheme.rejected-ibans")
+    Optional<List<String>> rejectedIbans;
 
     @Override
     public SchemeAcknowledgement submit(SchemeSubmission submission) {
@@ -57,10 +59,17 @@ public class SimulatedSchemeGateway implements SchemeGateway {
         return SchemeAcknowledgement.accepted("accepted for settlement on " + submission.valueDate());
     }
 
+    /**
+     * The configured rejections, upper-cased for comparison.
+     *
+     * <p>{@code Optional} rather than a blank default: an empty string is not a value Quarkus
+     * will convert to a {@code String}, so {@code defaultValue = ""} fails at startup with a
+     * message about the property rather than about the empty default.
+     */
     private Set<String> rejected() {
-        if (rejectedIbans == null || rejectedIbans.isBlank()) {
-            return Set.of();
-        }
-        return Set.of(rejectedIbans.toUpperCase(Locale.ROOT).replace(" ", "").split(","));
+        return rejectedIbans.orElseGet(List::of).stream()
+                .map(iban -> iban.trim().toUpperCase(Locale.ROOT))
+                .filter(iban -> !iban.isEmpty())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 }

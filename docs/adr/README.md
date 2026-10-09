@@ -18,6 +18,7 @@ means adding a new record that references the old one.
 | [0010](0010-money-as-integer-minor-units.md) | Money as integer minor units | Accepted |
 | [0011](0011-reversal-by-contra-entry.md) | Reversal by contra entry | Accepted |
 | [0012](0012-hash-chained-ledger.md) | Hash-chained ledger | Accepted |
+| [0013](0013-idempotency-keys-at-the-api-edge.md) | Idempotency keys at the API edge | Accepted |
 
 ## Planned
 

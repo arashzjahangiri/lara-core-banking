@@ -16,13 +16,22 @@ import io.lara.payments.domain.Transfer;
  * <p>Kept out of {@link Transfer} on purpose. A revision number is a fact about a stored row, not
  * about a payment, and the domain has no business knowing that it is stored at all.
  */
-public record StoredTransfer(Transfer transfer, long version) {
+public record StoredTransfer(Transfer transfer, long version, int recoveryAttempts) {
 
     public StoredTransfer {
         Objects.requireNonNull(transfer, "transfer must not be null");
         if (version < 0) {
             throw new IllegalArgumentException("version cannot be negative, was " + version);
         }
+        if (recoveryAttempts < 0) {
+            throw new IllegalArgumentException(
+                    "recovery attempts cannot be negative, was " + recoveryAttempts);
+        }
+    }
+
+    /** A freshly read saga that recovery has never touched. */
+    public static StoredTransfer of(Transfer transfer, long version) {
+        return new StoredTransfer(transfer, version, 0);
     }
 
     public io.lara.payments.domain.TransferId id() {

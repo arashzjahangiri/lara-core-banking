@@ -113,6 +113,16 @@ public class TransferEntity {
     private Instant lastTouchedAt;
 
     /**
+     * How many times recovery has resumed this saga.
+     *
+     * <p>Distinct from {@link #version}, which counts every write. This counts only resumptions,
+     * because that is what the give-up rule is about: a saga advanced fifty times by a healthy
+     * orchestrator is healthy, and one resumed four times is not.
+     */
+    @Column(name = "recovery_attempts", nullable = false)
+    private int recoveryAttempts;
+
+    /**
      * The history.
      *
      * <p>Cascaded and orphan-removed so one {@code merge} writes the saga and its new transitions
@@ -256,5 +266,13 @@ public class TransferEntity {
 
     public long version() {
         return version;
+    }
+
+    public int recoveryAttempts() {
+        return recoveryAttempts;
+    }
+
+    void recordRecoveryAttempt() {
+        recoveryAttempts++;
     }
 }

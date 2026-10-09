@@ -154,7 +154,39 @@ public class JpaTransfers implements Transfers {
                 .toList();
     }
 
+    /**
+     * Counts one resumption, in its own transaction.
+     *
+     * <p>{@code REQUIRES_NEW} rather than joining the caller's. If the resumption then fails and
+     * rolls back, the record of having tried must survive — otherwise the counter never moves and
+     * the sweep retries a broken saga forever.
+     *
+     * <p>Deliberately does not touch the version column: this is bookkeeping about the saga, not
+     * a change to it, and bumping the version would make the live orchestrator lose a race it
+     * should have won.
+     */
+    @Override
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public int recordRecoveryAttempt(TransferId id) {
+        entityManager.createNativeQuery("""
+                        update transfer
+                        set recovery_attempts = recovery_attempts + 1
+                        where id = :id
+                        """)
+                .setParameter("id", id.value())
+                .executeUpdate();
+
+        entityManager.clear();
+
+        Number attempts = (Number) entityManager
+                .createNativeQuery("select recovery_attempts from transfer where id = :id")
+                .setParameter("id", id.value())
+                .getSingleResult();
+
+        return attempts.intValue();
+    }
+
     private StoredTransfer stored(TransferEntity entity) {
-        return new StoredTransfer(entity.toDomain(clock), entity.version());
+        return new StoredTransfer(entity.toDomain(clock), entity.version(), entity.recoveryAttempts());
     }
 }

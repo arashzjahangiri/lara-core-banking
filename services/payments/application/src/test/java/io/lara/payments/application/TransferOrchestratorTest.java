@@ -668,7 +668,7 @@ class TransferOrchestratorTest {
 
         @Override
         public void add(Transfer transfer) {
-            rows.put(transfer.id(), new StoredTransfer(transfer, 0L));
+            rows.put(transfer.id(), StoredTransfer.of(transfer, 0L));
         }
 
         @Override
@@ -680,7 +680,15 @@ class TransferOrchestratorTest {
             if (current.version() != stored.version()) {
                 throw new ConcurrentTransferModificationException(stored.id(), null);
             }
-            rows.put(stored.id(), new StoredTransfer(stored.transfer(), stored.version() + 1));
+            rows.put(stored.id(), new StoredTransfer(stored.transfer(), stored.version() + 1, stored.recoveryAttempts()));
+        }
+
+        @Override
+        public int recordRecoveryAttempt(TransferId id) {
+            StoredTransfer current = rows.get(id);
+            int attempts = current.recoveryAttempts() + 1;
+            rows.put(id, new StoredTransfer(current.transfer(), current.version(), attempts));
+            return attempts;
         }
 
         @Override
@@ -709,7 +717,8 @@ class TransferOrchestratorTest {
                         original.state(),
                         original.history(),
                         CLOCK),
-                stored.version());
+                stored.version(),
+                stored.recoveryAttempts());
     }
 
     private static final class StubAccounts implements AccountDirectory {

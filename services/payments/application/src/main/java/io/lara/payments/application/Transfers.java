@@ -53,4 +53,16 @@ public interface Transfers {
      * number of in-flight ones does not.
      */
     List<StoredTransfer> stuckIn(List<TransferStatus> states, java.time.Instant notTouchedSince, int limit);
+
+    /**
+     * Counts one resumption against a saga and reports the new total.
+     *
+     * <p>Committed on its own, separately from whatever the resumption then does. That ordering
+     * is the point: a saga that fails in a way that rolls back its own transaction would
+     * otherwise roll back the record of having been attempted too, and the sweep would retry it
+     * forever without the counter ever moving.
+     *
+     * @return the number of resumptions including this one
+     */
+    int recordRecoveryAttempt(TransferId id);
 }

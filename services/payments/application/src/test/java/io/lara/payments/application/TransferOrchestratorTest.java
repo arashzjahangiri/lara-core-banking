@@ -65,13 +65,14 @@ class TransferOrchestratorTest {
     private final StubAccounts accounts = new StubAccounts();
     private final StubRisk risk = new StubRisk();
     private final StubLedger ledger = new StubLedger();
+    private final StubScheme scheme = new StubScheme();
 
     private TransferOrchestrator orchestrator;
 
     @BeforeEach
     void setUp() {
         orchestrator = new TransferOrchestrator(
-                transfers, accounts, risk, ledger, SUSPENSE, FEE_INCOME, FOUR_EYES_THRESHOLD);
+                transfers, accounts, risk, ledger, scheme, SUSPENSE, FEE_INCOME, FOUR_EYES_THRESHOLD);
 
         accounts.register(new AccountSummary(DEBTOR, "cust-1", DEBTOR_LEDGER, EUR, true));
         accounts.register(new AccountSummary(INTERNAL_CREDITOR, "cust-2", CREDITOR_LEDGER, EUR, true));
@@ -475,6 +476,128 @@ class TransferOrchestratorTest {
     }
 
     @Nested
+    @DisplayName("when the scheme rejects a payment that has already been posted")
+    class SchemeRejection {
+
+        /**
+         * The whole reason compensation exists. The ledger has moved the money, and the party
+         * that was going to carry it onward has declined — so there is nothing to reject and
+         * something real to undo.
+         */
+        @Test
+        void compensates_rather_than_rejecting() {
+            scheme.answer = SchemeAcknowledgement.rejected("beneficiary account closed");
+            Transfer transfer = sepaTransfer(125_000);
+
+            assertThat(drive(transfer.id())).isEqualTo(SagaProgress.FINISHED);
+
+            Transfer settled = reload(transfer.id());
+            assertThat(settled.status()).isEqualTo(TransferStatus.COMPENSATED);
+            assertThat(settled.state())
+                    .isInstanceOfSatisfying(TransferState.Compensated.class, compensated -> {
+                        assertThat(compensated.ledgerTransaction()).isEqualTo(ledger.lastPosted());
+                        assertThat(compensated.reversal()).isEqualTo(ledger.lastReversal());
+                        assertThat(compensated.cause()).contains("beneficiary account closed");
+                    });
+        }
+
+        /** Exactly one posting and exactly one reversal. The money went out and came back once. */
+        @Test
+        void posts_once_and_reverses_once() {
+            scheme.answer = SchemeAcknowledgement.rejected("beneficiary account closed");
+            Transfer transfer = sepaTransfer(125_000);
+
+            drive(transfer.id());
+
+            assertThat(ledger.postings).hasSize(1);
+            assertThat(ledger.reversals).hasSize(1);
+            assertThat(ledger.reversals.get(0)).isEqualTo(ledger.lastPosted());
+        }
+
+        @Test
+        void records_both_the_posting_and_the_reversal_in_the_history() {
+            scheme.answer = SchemeAcknowledgement.rejected("beneficiary account closed");
+            Transfer transfer = sepaTransfer(125_000);
+
+            drive(transfer.id());
+
+            assertThat(reload(transfer.id()).history())
+                    .extracting(h -> h.to().name())
+                    .containsExactly("SCREENING", "POSTING", "POSTED", "COMPENSATING", "COMPENSATED");
+        }
+
+        /**
+         * An internal transfer never touches a scheme, so this path cannot reach it. Both
+         * accounts are at this bank and the ledger entry is the settlement.
+         */
+        @Test
+        void never_happens_to_an_internal_transfer() {
+            scheme.answer = SchemeAcknowledgement.rejected("would reject if asked");
+            Transfer transfer = internalTransfer(125_000);
+
+            assertThat(drive(transfer.id())).isEqualTo(SagaProgress.FINISHED);
+            assertThat(reload(transfer.id()).status()).isEqualTo(TransferStatus.COMPLETED);
+            assertThat(scheme.submissions).isEmpty();
+            assertThat(ledger.reversals).isEmpty();
+        }
+
+        /**
+         * An unreachable scheme is not a rejection. The submission may well have landed, and
+         * reversing a payment the scheme accepted would send the money back while the
+         * beneficiary is also being paid — a far more expensive mistake than waiting.
+         */
+        @Test
+        void does_not_compensate_merely_because_the_scheme_is_unreachable() {
+            scheme.unreachable = true;
+            Transfer transfer = sepaTransfer(125_000);
+
+            orchestrator.advanceOnce(transfer.id());
+            orchestrator.advanceOnce(transfer.id());
+            orchestrator.advanceOnce(transfer.id());
+
+            assertThatExceptionOfType(RemoteServiceException.class)
+                    .isThrownBy(() -> orchestrator.advanceOnce(transfer.id()))
+                    .satisfies(failure -> assertThat(failure.service()).isEqualTo("scheme"));
+
+            assertThat(reload(transfer.id()).status()).isEqualTo(TransferStatus.POSTED);
+            assertThat(ledger.reversals).isEmpty();
+        }
+
+        /** Once the scheme answers, the saga finishes normally with no special handling. */
+        @Test
+        void resumes_when_the_scheme_comes_back() {
+            scheme.unreachable = true;
+            Transfer transfer = sepaTransfer(125_000);
+            for (int step = 0; step < 3; step++) {
+                orchestrator.advanceOnce(transfer.id());
+            }
+            assertThatExceptionOfType(RemoteServiceException.class)
+                    .isThrownBy(() -> orchestrator.advanceOnce(transfer.id()));
+
+            scheme.unreachable = false;
+
+            assertThat(drive(transfer.id())).isEqualTo(SagaProgress.FINISHED);
+            assertThat(reload(transfer.id()).status()).isEqualTo(TransferStatus.COMPLETED);
+        }
+
+        /**
+         * Nothing that fails before the posting may compensate: there is nothing to undo, and a
+         * reversal of a posting that never happened would move money that was never moved.
+         */
+        @Test
+        void a_failure_before_the_posting_never_reverses_anything() {
+            risk.answer = ScreeningVerdict.block("sanctions match");
+            Transfer transfer = sepaTransfer(125_000);
+
+            drive(transfer.id());
+
+            assertThat(reload(transfer.id()).status()).isEqualTo(TransferStatus.REJECTED);
+            assertThat(ledger.postings).isEmpty();
+            assertThat(ledger.reversals).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("compensating")
     class Compensating {
 
@@ -633,12 +756,29 @@ class TransferOrchestratorTest {
         }
     }
 
+    private static final class StubScheme implements SchemeGateway {
+
+        private SchemeAcknowledgement answer = SchemeAcknowledgement.accepted("accepted");
+        private boolean unreachable;
+        private final List<SchemeSubmission> submissions = new ArrayList<>();
+
+        @Override
+        public SchemeAcknowledgement submit(SchemeSubmission submission) {
+            if (unreachable) {
+                throw new RemoteServiceException("scheme", "no response");
+            }
+            submissions.add(submission);
+            return answer;
+        }
+    }
+
     private static final class StubLedger implements LedgerPosting {
 
         private final List<PostingCommand> postings = new ArrayList<>();
         private final List<LedgerTransactionRef> posted = new ArrayList<>();
         private boolean unreachable;
         private String refuseWith;
+        private final List<LedgerTransactionRef> reversals = new ArrayList<>();
         private LedgerTransactionRef lastReversal;
         private LedgerTransactionRef lastReversed;
 
@@ -662,6 +802,7 @@ class TransferOrchestratorTest {
                 throw new RemoteServiceException("ledger", "connection reset");
             }
             lastReversed = original;
+            reversals.add(original);
             lastReversal = LedgerTransactionRef.of(UUID.randomUUID());
             return lastReversal;
         }

@@ -47,6 +47,7 @@ public final class TransferOrchestrator {
     private final AccountDirectory accounts;
     private final RiskScreening risk;
     private final LedgerPosting ledger;
+    private final SchemeGateway scheme;
     private final String sepaSuspenseAccount;
     private final String feeIncomeAccount;
     private final Money fourEyesThreshold;
@@ -56,6 +57,7 @@ public final class TransferOrchestrator {
             AccountDirectory accounts,
             RiskScreening risk,
             LedgerPosting ledger,
+            SchemeGateway scheme,
             String sepaSuspenseAccount,
             String feeIncomeAccount,
             Money fourEyesThreshold) {
@@ -64,6 +66,7 @@ public final class TransferOrchestrator {
         this.accounts = Objects.requireNonNull(accounts, "accounts must not be null");
         this.risk = Objects.requireNonNull(risk, "risk must not be null");
         this.ledger = Objects.requireNonNull(ledger, "ledger must not be null");
+        this.scheme = Objects.requireNonNull(scheme, "scheme must not be null");
         this.sepaSuspenseAccount = Objects.requireNonNull(sepaSuspenseAccount, "suspense account must not be null");
         this.feeIncomeAccount = Objects.requireNonNull(feeIncomeAccount, "fee income account must not be null");
         this.fourEyesThreshold = Objects.requireNonNull(fourEyesThreshold, "threshold must not be null");
@@ -82,7 +85,7 @@ public final class TransferOrchestrator {
             case REQUESTED -> validateAccounts(stored);
             case SCREENING -> screen(stored);
             case POSTING -> post(stored);
-            case POSTED -> complete(stored);
+            case POSTED -> settle(stored);
             case COMPENSATING -> compensate(stored);
 
             // Waiting on a person. Nothing automatic moves this forward, and that is correct.
@@ -213,7 +216,46 @@ public final class TransferOrchestrator {
         return SagaProgress.ADVANCED;
     }
 
-    /** Nothing left to do. The money moved and the saga agrees it did. */
+    /**
+     * Hands the payment on, or discovers that nobody will take it.
+     *
+     * <p>The only step that runs after the money has already moved, and therefore the only one
+     * whose failure cannot be a rejection. An internal transfer skips it entirely — both accounts
+     * are at this bank, so the ledger entry <em>is</em> the settlement and there is nobody to
+     * hand anything to.
+     *
+     * <p>For a SEPA transfer the scheme can decline: a closed beneficiary account, a creditor
+     * bank that will not accept it. That is the trigger compensation exists for. An unreachable
+     * scheme is deliberately not: the submission may have landed, and reversing a payment the
+     * scheme actually accepted would send the money back while the beneficiary is also being
+     * paid.
+     */
+    private SagaProgress settle(StoredTransfer stored) {
+        Transfer transfer = stored.transfer();
+
+        if (transfer.scheme() == TransferScheme.INTERNAL) {
+            return complete(stored);
+        }
+
+        SchemeAcknowledgement acknowledgement = scheme.submit(new SchemeSubmission(
+                transfer.reference(),
+                transfer.debtor(),
+                transfer.creditor(),
+                transfer.amount(),
+                transfer.valueDate()));
+
+        if (acknowledgement.accepted()) {
+            return complete(stored);
+        }
+
+        // Money has moved and the scheme will not carry it. Rejection is not available here and
+        // the state machine would refuse it anyway; the only honest exit is to put it back.
+        transfer.startCompensation("scheme rejected the payment: " + acknowledgement.reason());
+        transfers.update(stored);
+        return SagaProgress.ADVANCED;
+    }
+
+    /** Nothing left to do. The money moved and everyone who had to accept it has. */
     private SagaProgress complete(StoredTransfer stored) {
         stored.transfer().complete();
         transfers.update(stored);

@@ -57,7 +57,7 @@ class TransferTest {
             case SCREENING -> transfer.startScreening();
             case APPROVAL_PENDING -> {
                 transfer.startScreening();
-                transfer.awaitApproval();
+                transfer.awaitApproval("over the four-eyes threshold");
             }
             case POSTING -> {
                 transfer.startScreening();
@@ -157,7 +157,7 @@ class TransferTest {
                     edge(TransferStatus.REQUESTED, TransferStatus.FAILED, t -> t.fail("out of attempts")),
 
                     edge(TransferStatus.SCREENING, TransferStatus.POSTING, Transfer::startPosting),
-                    edge(TransferStatus.SCREENING, TransferStatus.APPROVAL_PENDING, Transfer::awaitApproval),
+                    edge(TransferStatus.SCREENING, TransferStatus.APPROVAL_PENDING, t -> t.awaitApproval("over the four-eyes threshold")),
                     edge(TransferStatus.SCREENING, TransferStatus.REJECTED,
                             t -> t.reject(RejectionReason.SCREENING_BLOCKED, "daily limit exceeded")),
                     edge(TransferStatus.SCREENING, TransferStatus.FAILED, t -> t.fail("risk unreachable")),
@@ -276,7 +276,7 @@ class TransferTest {
             Transfer transfer = inState(TransferStatus.REQUESTED);
 
             assertThatExceptionOfType(IllegalTransferTransitionException.class)
-                    .isThrownBy(transfer::awaitApproval);
+                    .isThrownBy(() -> transfer.awaitApproval("x"));
         }
     }
 
@@ -299,7 +299,7 @@ class TransferTest {
             assertThatExceptionOfType(IllegalTransferTransitionException.class)
                     .isThrownBy(transfer::startPosting);
             assertThatExceptionOfType(IllegalTransferTransitionException.class)
-                    .isThrownBy(transfer::awaitApproval);
+                    .isThrownBy(() -> transfer.awaitApproval("x"));
             assertThatExceptionOfType(IllegalTransferTransitionException.class)
                     .isThrownBy(() -> transfer.posted(someLedgerTransaction()));
             assertThatExceptionOfType(IllegalTransferTransitionException.class)
@@ -394,7 +394,7 @@ class TransferTest {
         void records_the_whole_path_in_order() {
             Transfer transfer = requested();
             transfer.startScreening();
-            transfer.awaitApproval();
+            transfer.awaitApproval("over the four-eyes threshold");
             transfer.startPosting();
             transfer.posted(someLedgerTransaction());
             transfer.complete();

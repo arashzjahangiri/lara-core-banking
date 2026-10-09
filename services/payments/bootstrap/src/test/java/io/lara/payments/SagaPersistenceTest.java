@@ -191,7 +191,7 @@ class SagaPersistenceTest {
 
             advance(transfer.id(), t -> {
                 t.startScreening();
-                t.awaitApproval();
+                t.awaitApproval("over the four-eyes threshold");
             });
 
             assertThat(reloaded(transfer.id()).state())
@@ -262,7 +262,7 @@ class SagaPersistenceTest {
 
             StoredTransfer winner = reload(saga.id());
             winner.transfer().startScreening();
-            winner.transfer().awaitApproval();
+            winner.transfer().awaitApproval("over the four-eyes threshold");
             QuarkusTransaction.requiringNew().run(() -> transfers.update(winner));
 
             loser.transfer().startScreening();

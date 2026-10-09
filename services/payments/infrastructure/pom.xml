@@ -53,6 +53,11 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest-jackson</artifactId>
     </dependency>
+    <!-- Outbound: the orchestrator's calls to accounts, risk and ledger. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest-client-jackson</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-hibernate-validator</artifactId>

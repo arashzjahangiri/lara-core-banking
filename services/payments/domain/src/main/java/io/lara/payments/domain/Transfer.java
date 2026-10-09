@@ -167,10 +167,16 @@ public final class Transfer {
         moveTo(new TransferState.Posting(), "");
     }
 
-    /** Risk allowed it, but it is over the four-eyes threshold. */
-    public void awaitApproval() {
+    /**
+     * Park until a person looks at it.
+     *
+     * <p>Two different situations end here — risk asked for a review, or the amount is over the
+     * four-eyes threshold — and the caller says which. They are indistinguishable in the state
+     * but not to whoever is reading the history to work out why their payment has not moved.
+     */
+    public void awaitApproval(String why) {
         requireCurrentlyIn(TransferStatus.APPROVAL_PENDING, TransferStatus.SCREENING);
-        moveTo(new TransferState.ApprovalPending(requestedBy), "over the four-eyes threshold");
+        moveTo(new TransferState.ApprovalPending(requestedBy), Objects.requireNonNull(why, "why must not be null"));
     }
 
     /**

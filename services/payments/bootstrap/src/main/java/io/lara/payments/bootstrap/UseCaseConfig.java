@@ -16,6 +16,7 @@ import io.lara.payments.application.RequestTransfer;
 import io.lara.payments.application.RiskScreening;
 import io.lara.payments.application.SchemeGateway;
 import io.lara.payments.application.TransferOrchestrator;
+import io.lara.payments.application.TransferEvents;
 import io.lara.payments.application.Transfers;
 import io.lara.payments.domain.BusinessCalendar;
 import io.lara.payments.domain.Money;
@@ -89,7 +90,8 @@ public class UseCaseConfig {
             AccountDirectory accounts,
             RiskScreening risk,
             LedgerPosting ledger,
-            SchemeGateway scheme) {
+            SchemeGateway scheme,
+            TransferEvents events) {
 
         return new TransferOrchestrator(
                 transfers,
@@ -97,6 +99,7 @@ public class UseCaseConfig {
                 risk,
                 ledger,
                 scheme,
+                events,
                 sepaSuspenseAccount,
                 feeIncomeAccount,
                 Money.of(fourEyesThresholdMinor, currency));

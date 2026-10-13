@@ -48,6 +48,7 @@ public final class TransferOrchestrator {
     private final RiskScreening risk;
     private final LedgerPosting ledger;
     private final SchemeGateway scheme;
+    private final TransferEvents events;
     private final String sepaSuspenseAccount;
     private final String feeIncomeAccount;
     private final Money fourEyesThreshold;
@@ -58,6 +59,7 @@ public final class TransferOrchestrator {
             RiskScreening risk,
             LedgerPosting ledger,
             SchemeGateway scheme,
+            TransferEvents events,
             String sepaSuspenseAccount,
             String feeIncomeAccount,
             Money fourEyesThreshold) {
@@ -67,6 +69,7 @@ public final class TransferOrchestrator {
         this.risk = Objects.requireNonNull(risk, "risk must not be null");
         this.ledger = Objects.requireNonNull(ledger, "ledger must not be null");
         this.scheme = Objects.requireNonNull(scheme, "scheme must not be null");
+        this.events = Objects.requireNonNull(events, "events must not be null");
         this.sepaSuspenseAccount = Objects.requireNonNull(sepaSuspenseAccount, "suspense account must not be null");
         this.feeIncomeAccount = Objects.requireNonNull(feeIncomeAccount, "fee income account must not be null");
         this.fourEyesThreshold = Objects.requireNonNull(fourEyesThreshold, "threshold must not be null");
@@ -258,8 +261,7 @@ public final class TransferOrchestrator {
     /** Nothing left to do. The money moved and everyone who had to accept it has. */
     private SagaProgress complete(StoredTransfer stored) {
         stored.transfer().complete();
-        transfers.update(stored);
-        return SagaProgress.FINISHED;
+        return finish(stored);
     }
 
     /**
@@ -282,8 +284,7 @@ public final class TransferOrchestrator {
                 original, "compensating transfer " + transfer.id());
 
         transfer.compensated(reversal);
-        transfers.update(stored);
-        return SagaProgress.FINISHED;
+        return finish(stored);
     }
 
     private SagaProgress park(StoredTransfer stored, String why) {
@@ -300,7 +301,20 @@ public final class TransferOrchestrator {
 
     private SagaProgress reject(StoredTransfer stored, RejectionReason reason, String detail) {
         stored.transfer().reject(reason, detail);
+        return finish(stored);
+    }
+
+    /**
+     * Saves a transfer that has reached a terminal state, and announces it.
+     *
+     * <p>One method for all three endings, so the event cannot be forgotten on whichever path
+     * someone adds next. Both writes land in the caller''s transaction — that is the outbox''s
+     * entire purpose, and an event committed separately from the state change it describes can
+     * exist without that state change ever having happened.
+     */
+    private SagaProgress finish(StoredTransfer stored) {
         transfers.update(stored);
+        events.recordTerminal(stored.transfer());
         return SagaProgress.FINISHED;
     }
 

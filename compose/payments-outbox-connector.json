@@ -1,0 +1,43 @@
+{
+  "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+  "topic.prefix": "lara",
+
+  "database.hostname": "postgres",
+  "database.port": "5432",
+  "database.user": "payments",
+  "database.password": "payments",
+  "database.dbname": "payments",
+
+  "_comment_slot": "Its own replication slot and publication. The ledger connector has its own, and two connectors sharing a slot would each see only part of the stream — whichever read a change first would consume it.",
+  "plugin.name": "pgoutput",
+  "slot.name": "payments_outbox",
+  "publication.name": "payments_outbox_pub",
+
+  "table.include.list": "public.outbox",
+
+  "_comment_snapshot": "The outbox is a queue, not history. On first start there is nothing worth replaying, and a snapshot of rows that may already have been published would duplicate them.",
+  "snapshot.mode": "no_data",
+
+  "_comment_router": "The outbox event router unwraps the envelope: the Kafka key becomes aggregate_id (the transfer id) so one transfer's events share a partition and stay ordered, and the message value becomes the payload column rather than a Debezium change record. A consumer that saw TransferCompensated before TransferCompleted would have to reason about a payment that was reversed before it succeeded.",
+  "transforms": "outbox",
+  "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+  "transforms.outbox.table.field.event.id": "id",
+  "transforms.outbox.table.field.event.key": "aggregate_id",
+  "transforms.outbox.table.field.event.type": "event_type",
+  "transforms.outbox.table.field.event.payload": "payload",
+
+  "_comment_timestamp": "created_at is deliberately NOT mapped as the event timestamp. The router requires an INT64 epoch and a TIMESTAMPTZ arrives as a string, so mapping it fails the task with 'Field created_at is not of type INT64'. Debezium's own source timestamp is used instead, and the business time is requestedAt inside the payload anyway.",
+  "transforms.outbox.route.by.field": "aggregate_type",
+  "transforms.outbox.route.topic.replacement": "${routedByValue}",
+
+  "_comment_deletes": "Pruning deletes published rows. Those deletes must not be published as events, or every consumer sees a tombstone for a transfer that genuinely finished. skipped.operations drops them at the connector so the router never sees one; table.op.invalid.behavior is only the fallback if one somehow reaches it, and it accepts warn|error|fatal rather than skip.",
+  "skipped.operations": "u,d,t",
+  "transforms.outbox.table.op.invalid.behavior": "warn",
+
+  "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "key.converter.schemas.enable": "false",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false",
+
+  "tasks.max": "1"
+}

@@ -227,5 +227,25 @@ services:
       http://connect:8083/connectors/ledger-outbox/config
     restart: on-failure
 
+  # The payments outbox gets its own connector, its own replication slot and its own publication.
+  # Two connectors sharing a slot would each see only part of the stream, because whichever read a
+  # change first would consume it.
+  payments-connector-setup:
+    image: curlimages/curl:8.11.1
+    depends_on:
+      connect:
+        condition: service_healthy
+      payments:
+        condition: service_healthy
+    volumes:
+      - ./compose/payments-outbox-connector.json:/config/payments-outbox-connector.json:ro
+    command: >
+      -sS -X PUT
+      -H "Content-Type: application/json"
+      --data @/config/payments-outbox-connector.json
+      --fail-with-body
+      http://connect:8083/connectors/payments-outbox/config
+    restart: on-failure
+
 volumes:
   ledger-data:

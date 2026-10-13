@@ -66,13 +66,14 @@ class TransferOrchestratorTest {
     private final StubRisk risk = new StubRisk();
     private final StubLedger ledger = new StubLedger();
     private final StubScheme scheme = new StubScheme();
+    private final RecordingEvents events = new RecordingEvents();
 
     private TransferOrchestrator orchestrator;
 
     @BeforeEach
     void setUp() {
         orchestrator = new TransferOrchestrator(
-                transfers, accounts, risk, ledger, scheme, SUSPENSE, FEE_INCOME, FOUR_EYES_THRESHOLD);
+                transfers, accounts, risk, ledger, scheme, events, SUSPENSE, FEE_INCOME, FOUR_EYES_THRESHOLD);
 
         accounts.register(new AccountSummary(DEBTOR, "cust-1", DEBTOR_LEDGER, EUR, true));
         accounts.register(new AccountSummary(INTERNAL_CREDITOR, "cust-2", CREDITOR_LEDGER, EUR, true));
@@ -181,6 +182,19 @@ class TransferOrchestratorTest {
             assertThat(risk.lastCommand().amount()).isEqualTo(Money.of(125_050, "EUR"));
             assertThat(risk.lastCommand().customerId()).isEqualTo("cust-1");
             assertThat(risk.lastCommand().reference()).isEqualTo(transfer.reference());
+        }
+
+        /**
+         * The fact goes out exactly once, when the transfer is finished — not on every step.
+         * ADR-0002: commands are synchronous, facts are asynchronous.
+         */
+        @Test
+        void announces_the_completed_transfer_once() {
+            Transfer transfer = sepaTransfer(125_000);
+
+            drive(transfer.id());
+
+            assertThat(events.statuses()).containsExactly(TransferStatus.COMPLETED);
         }
 
         @Test
@@ -324,6 +338,16 @@ class TransferOrchestratorTest {
             drive(transfer.id());
 
             assertRejected(transfer.id(), RejectionReason.LEDGER_REFUSED);
+        }
+
+        @Test
+        void announces_the_rejection() {
+            risk.answer = ScreeningVerdict.block("sanctions match");
+            Transfer transfer = sepaTransfer(125_000);
+
+            drive(transfer.id());
+
+            assertThat(events.statuses()).containsExactly(TransferStatus.REJECTED);
         }
 
         private void assertRejected(TransferId id, RejectionReason expected) {
@@ -512,6 +536,20 @@ class TransferOrchestratorTest {
             assertThat(ledger.postings).hasSize(1);
             assertThat(ledger.reversals).hasSize(1);
             assertThat(ledger.reversals.get(0)).isEqualTo(ledger.lastPosted());
+        }
+
+        /**
+         * A compensated transfer announces {@code COMPENSATED} and nothing else. It never
+         * completed, so a consumer must not see a completion for it.
+         */
+        @Test
+        void announces_only_the_compensation() {
+            scheme.answer = SchemeAcknowledgement.rejected("beneficiary account closed");
+            Transfer transfer = sepaTransfer(125_000);
+
+            drive(transfer.id());
+
+            assertThat(events.statuses()).containsExactly(TransferStatus.COMPENSATED);
         }
 
         @Test
@@ -762,6 +800,21 @@ class TransferOrchestratorTest {
 
         ScreeningCommand lastCommand() {
             return commands.get(commands.size() - 1);
+        }
+    }
+
+    /** Mirrors the real adapter: only terminal transfers are announced. */
+    private static final class RecordingEvents implements TransferEvents {
+
+        private final List<Transfer> announced = new ArrayList<>();
+
+        @Override
+        public void recordTerminal(Transfer transfer) {
+            announced.add(transfer);
+        }
+
+        List<TransferStatus> statuses() {
+            return announced.stream().map(Transfer::status).toList();
         }
     }
 

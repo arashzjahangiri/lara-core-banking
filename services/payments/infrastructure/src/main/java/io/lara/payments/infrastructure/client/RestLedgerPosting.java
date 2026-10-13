@@ -7,7 +7,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
+
+import io.smallrye.faulttolerance.api.CircuitBreakerName;
 
 import io.lara.payments.application.LedgerPosting;
 import io.lara.payments.application.LedgerRefusedException;
@@ -43,6 +47,16 @@ import io.lara.payments.infrastructure.client.LedgerClient.TransactionResponse;
  * <p>There is deliberately no fallback. A synthetic success here would tell the saga money had
  * moved when it had not, and the transfer would be marked complete over a posting that does not
  * exist.
+ *
+ * <h2>Why retrying a posting is safe</h2>
+ *
+ * <p>Only because of ADR-0007. The reference is derived from the transfer id, so a repeated post
+ * returns the transaction the ledger already recorded rather than moving the money again. Retry
+ * on a call without that guarantee is how one payment becomes three.
+ *
+ * <p>{@code abortOn} is the other half and matters more. A refusal is a decision — the entry is
+ * invalid, or the funds are not there — and retrying it four times produces the same refusal four
+ * times while the customer waits. Only an unreachable ledger is worth another attempt.
  */
 @ApplicationScoped
 public class RestLedgerPosting implements LedgerPosting {
@@ -58,6 +72,12 @@ public class RestLedgerPosting implements LedgerPosting {
     }
 
     @Override
+    @Retry(maxRetries = 3, delay = 200, jitter = 150,
+            retryOn = RemoteServiceException.class,
+            abortOn = LedgerRefusedException.class)
+    @CircuitBreaker(requestVolumeThreshold = 8, failureRatio = 0.5, delay = 10_000,
+            failOn = RemoteServiceException.class)
+    @CircuitBreakerName("ledger")
     public LedgerTransactionRef post(PostingCommand command) {
         try {
             TransactionResponse response = ledger.post(new PostTransactionRequest(
@@ -73,7 +93,22 @@ public class RestLedgerPosting implements LedgerPosting {
         }
     }
 
+    /**
+     * Retried, but deliberately not behind a breaker.
+     *
+     * <p>A breaker exists to stop pointless work against a dependency that is clearly down. That
+     * reasoning does not hold here: when a reversal is outstanding, money has already left a
+     * customer''s account and is sitting in suspense, so the cost of one more attempt is nothing
+     * against the cost of not making it.
+     *
+     * <p>Sharing the posting breaker would be worse still. A burst of failed postings would open
+     * it, and the reversals that burst created would then be refused without ever reaching the
+     * ledger — the system would stop putting money back precisely when it had most to put back.
+     */
     @Override
+    @Retry(maxRetries = 3, delay = 200, jitter = 150,
+            retryOn = RemoteServiceException.class,
+            abortOn = LedgerRefusedException.class)
     public LedgerTransactionRef reverse(LedgerTransactionRef original, String reason) {
         try {
             return LedgerTransactionRef.of(ledger.reverse(original.value().toString()).id());

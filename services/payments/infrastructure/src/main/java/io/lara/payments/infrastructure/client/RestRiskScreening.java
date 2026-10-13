@@ -4,7 +4,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.WebApplicationException;
 
+import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
+import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
+
+import io.smallrye.faulttolerance.api.CircuitBreakerName;
 
 import io.lara.payments.application.RemoteServiceException;
 import io.lara.payments.application.RiskScreening;
@@ -22,6 +26,21 @@ import io.lara.payments.application.ScreeningVerdict;
  * <p>An unrecognised outcome is also an error rather than a guess. If risk grows a fourth
  * verdict, this fails loudly on the first call instead of quietly mapping it to something
  * convenient.
+ *
+ * <h2>Retry and the breaker</h2>
+ *
+ * <p>Retrying is only safe because screening is idempotent by its reference: risk returns the
+ * decision it already made rather than evaluating again, so a second attempt cannot produce a
+ * different answer than the first. Adding retry to a call without that guarantee is how one
+ * screening becomes three entries in a customer''s daily total.
+ *
+ * <p>Jitter matters more than it looks. Without it, every payment that failed during a blip
+ * retries at the same instant, and the dependency coming back up is met by the entire backlog at
+ * once — so it falls over again.
+ *
+ * <p>The breaker then stops the retries once the dependency is clearly down. Four seconds of
+ * backoff per transfer across a thousand transfers is a thousand threads waiting on something
+ * that is not going to answer; failing immediately is kinder to both services.
  */
 @ApplicationScoped
 public class RestRiskScreening implements RiskScreening {
@@ -34,7 +53,17 @@ public class RestRiskScreening implements RiskScreening {
         this.risk = risk;
     }
 
+    /**
+     * Timeouts live on the REST client, retry and the breaker live here, and every value is
+     * overridable through MicroProfile config — the annotation holds the default, not the policy.
+     */
     @Override
+    @Retry(maxRetries = 3,
+            delay = 200, jitter = 150,
+            retryOn = RemoteServiceException.class)
+    @CircuitBreaker(requestVolumeThreshold = 8, failureRatio = 0.5, delay = 10_000,
+            failOn = RemoteServiceException.class)
+    @CircuitBreakerName("risk")
     public ScreeningVerdict screen(ScreeningCommand command) {
         RiskClient.ScreeningResponse response;
         try {

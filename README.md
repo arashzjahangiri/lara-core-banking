@@ -225,6 +225,7 @@ static final ArchRule domain_and_application_are_framework_free = noClasses()
 | Integration | Real HTTP against a real PostgreSQL via Dev Services, including the outbox. | 36 |
 | Contract | Consumer-driven Pact between `accounts` and `ledger`, verified both ways. | 2 |
 | Concurrency | Parallel transfers, a sweep racing the orchestrator, one key from many threads. | 13 |
+| Fault injection | A fault at every saga step; the books must balance after each one. | 15 |
 
 Three are worth singling out.
 
@@ -241,6 +242,23 @@ or another service.
 ```
 UPDATE posting_leg  →  posting_leg is append-only; UPDATE is not permitted.
                        Post a contra entry instead.
+```
+
+**What the tests cannot check, and the script that does.** 670 tests were green when the stack
+came up for the first time, and two bugs appeared within minutes: payments was configured to post
+to two ledger accounts that do not exist, and its REST clients pointed at `localhost`, which
+inside a container means the container itself. Neither is a logic error — both are values that are
+plausible, type-correct and wrong, and both are facts about the *gap between* services that no
+test running inside one of them can see. `scripts/verify-stack.ps1` drives the four real services
+and reads the ledger''s own database for its assertions. ([ADR-0017](docs/adr/0017-cross-service-configuration-needs-a-live-stack.md))
+
+```
+./scripts/verify-stack.ps1        # after docker compose up -d --build
+
+  OK   the transfer completed
+  OK   the debtor paid the amount plus the fee
+  OK   the trial balance is still zero
+  OK   a replay returns the original transfer, not a new one
 ```
 
 **The concurrency suite, and the fake it runs against.** Ten transfers race for an account

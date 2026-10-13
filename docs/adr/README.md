@@ -22,6 +22,7 @@ means adding a new record that references the old one.
 | [0014](0014-optimistic-locking-for-saga-state.md) | Optimistic locking for saga state | Accepted |
 | [0015](0015-four-eyes-is-a-domain-rule.md) | Four-eyes is a domain rule, not an authorisation concern | Accepted |
 | [0016](0016-no-fallback-may-fabricate-a-success.md) | No fallback may fabricate a success | Accepted |
+| [0017](0017-cross-service-configuration-needs-a-live-stack.md) | Cross-service configuration needs a live stack to verify | Accepted |
 
 ## Planned
 

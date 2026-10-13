@@ -161,10 +161,62 @@ public final class Transfer {
         moveTo(new TransferState.Screening(), "");
     }
 
-    /** Risk allowed it, and it is small enough to post without a second person. */
+    /**
+     * Risk allowed it, and it is small enough to post without a second person.
+     *
+     * <p>Reachable only from {@code SCREENING}. A parked transfer leaves {@code APPROVAL_PENDING}
+     * through {@link #approve} alone, so there is no path that posts an unapproved payment by
+     * calling the ordinary method — the four-eyes rule cannot be stepped around, only honoured.
+     */
     public void startPosting() {
-        requireCurrentlyIn(TransferStatus.POSTING, TransferStatus.SCREENING, TransferStatus.APPROVAL_PENDING);
+        requireCurrentlyIn(TransferStatus.POSTING, TransferStatus.SCREENING);
         moveTo(new TransferState.Posting(), "");
+    }
+
+    /**
+     * A second person approved it, so posting may begin.
+     *
+     * <p>The maker may not be the checker, and that is enforced here rather than at the REST
+     * layer. A rule that lives in an adapter is a rule that is absent from every other way into
+     * the aggregate — including the recovery sweep, a future message consumer, and whatever
+     * someone writes next year.
+     *
+     * @param checker who approved; never the person who requested it
+     */
+    public void approve(String checker) {
+        requireCurrentlyIn(TransferStatus.POSTING, TransferStatus.APPROVAL_PENDING);
+        requireDifferentPerson(checker, "approve");
+        moveTo(new TransferState.Posting(), "approved by " + checker.trim());
+    }
+
+    /**
+     * A second person looked at it and declined.
+     *
+     * <p>Ends in {@code REJECTED}, which means no money moved and none ever will — the state
+     * machine guarantees that, because this is only reachable before the posting.
+     *
+     * <p>The maker cannot decline their own transfer either. That looks harmless, but a maker who
+     * could close their own request could also use the approval queue as a drafting space, and
+     * the audit trail would stop showing a genuine second pair of eyes on every outcome.
+     */
+    public void declineApproval(String checker, String reason) {
+        requireCurrentlyIn(TransferStatus.REJECTED, TransferStatus.APPROVAL_PENDING);
+        requireDifferentPerson(checker, "decline");
+        Objects.requireNonNull(reason, "a decline must have a reason");
+
+        moveTo(new TransferState.Rejected(RejectionReason.APPROVAL_REFUSED,
+                "declined by " + checker.trim() + ": " + reason), "declined by " + checker.trim());
+    }
+
+    private void requireDifferentPerson(String checker, String action) {
+        Objects.requireNonNull(checker, "checker must not be null");
+        String trimmed = checker.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("checker must not be blank");
+        }
+        if (trimmed.equalsIgnoreCase(requestedBy.trim())) {
+            throw new FourEyesViolationException(requestedBy, action);
+        }
     }
 
     /**

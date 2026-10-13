@@ -162,9 +162,9 @@ class TransferTest {
                             t -> t.reject(RejectionReason.SCREENING_BLOCKED, "daily limit exceeded")),
                     edge(TransferStatus.SCREENING, TransferStatus.FAILED, t -> t.fail("risk unreachable")),
 
-                    edge(TransferStatus.APPROVAL_PENDING, TransferStatus.POSTING, Transfer::startPosting),
+                    edge(TransferStatus.APPROVAL_PENDING, TransferStatus.POSTING, t -> t.approve("checker")),
                     edge(TransferStatus.APPROVAL_PENDING, TransferStatus.REJECTED,
-                            t -> t.reject(RejectionReason.APPROVAL_REFUSED, "declined by checker")),
+                            t -> t.declineApproval("checker", "not satisfied")),
                     edge(TransferStatus.APPROVAL_PENDING, TransferStatus.FAILED,
                             t -> t.fail("approval window expired")),
 
@@ -281,6 +281,125 @@ class TransferTest {
     }
 
     @Nested
+    @DisplayName("four eyes")
+    class FourEyes {
+
+        /**
+         * The oldest control in banking, and the one most often implemented as a checkbox in a
+         * UI. In the domain it holds for every path into the aggregate, not just the screen that
+         * happens to have the button on it.
+         */
+        @Test
+        void the_maker_cannot_approve_their_own_transfer() {
+            Transfer transfer = inState(TransferStatus.APPROVAL_PENDING);
+
+            assertThatExceptionOfType(FourEyesViolationException.class)
+                    .isThrownBy(() -> transfer.approve(MAKER))
+                    .satisfies(violation -> {
+                        assertThat(violation.maker()).isEqualTo(MAKER);
+                        assertThat(violation.attemptedAction()).isEqualTo("approve");
+                    });
+
+            assertThat(transfer.status()).isEqualTo(TransferStatus.APPROVAL_PENDING);
+        }
+
+        /**
+         * Nor decline it. That looks harmless, but a maker who could close their own request
+         * could use the approval queue as a drafting space, and the audit trail would stop
+         * showing a genuine second pair of eyes on every outcome.
+         */
+        @Test
+        void the_maker_cannot_decline_their_own_transfer_either() {
+            Transfer transfer = inState(TransferStatus.APPROVAL_PENDING);
+
+            assertThatExceptionOfType(FourEyesViolationException.class)
+                    .isThrownBy(() -> transfer.declineApproval(MAKER, "changed my mind"));
+
+            assertThat(transfer.status()).isEqualTo(TransferStatus.APPROVAL_PENDING);
+        }
+
+        /** Case and surrounding spaces must not be a way around it. */
+        @Test
+        void is_not_defeated_by_case_or_whitespace() {
+            Transfer transfer = inState(TransferStatus.APPROVAL_PENDING);
+
+            assertThatExceptionOfType(FourEyesViolationException.class)
+                    .isThrownBy(() -> transfer.approve("  ARASH  "));
+        }
+
+        @Test
+        void a_different_person_may_approve() {
+            Transfer transfer = inState(TransferStatus.APPROVAL_PENDING);
+
+            transfer.approve("mette");
+
+            assertThat(transfer.status()).isEqualTo(TransferStatus.POSTING);
+        }
+
+        @Test
+        void records_who_approved_in_the_history() {
+            Transfer transfer = inState(TransferStatus.APPROVAL_PENDING);
+
+            transfer.approve("mette");
+
+            assertThat(lastNote(transfer)).isEqualTo("approved by mette");
+        }
+
+        @Test
+        void a_decline_ends_rejected_with_no_money_moved() {
+            Transfer transfer = inState(TransferStatus.APPROVAL_PENDING);
+
+            transfer.declineApproval("mette", "beneficiary not recognised");
+
+            assertThat(transfer.status()).isEqualTo(TransferStatus.REJECTED);
+            assertThat(transfer.ledgerTransaction()).isEmpty();
+            assertThat(transfer.state())
+                    .isInstanceOfSatisfying(TransferState.Rejected.class, rejected -> {
+                        assertThat(rejected.reason()).isEqualTo(RejectionReason.APPROVAL_REFUSED);
+                        assertThat(rejected.detail()).contains("mette");
+                        assertThat(rejected.detail()).contains("beneficiary not recognised");
+                    });
+        }
+
+        @Test
+        void refuses_a_blank_checker() {
+            Transfer transfer = inState(TransferStatus.APPROVAL_PENDING);
+
+            assertThatIllegalArgumentException()
+                    .isThrownBy(() -> transfer.approve("   "))
+                    .withMessageContaining("must not be blank");
+        }
+
+        /**
+         * The reason the ordinary posting transition was narrowed. A parked transfer leaves
+         * {@code APPROVAL_PENDING} through {@link Transfer#approve} alone, so there is no path
+         * that posts an unapproved payment by calling the plain method instead.
+         */
+        @Test
+        void a_parked_transfer_cannot_be_posted_without_approving_it() {
+            Transfer transfer = inState(TransferStatus.APPROVAL_PENDING);
+
+            assertThatExceptionOfType(IllegalTransferTransitionException.class)
+                    .isThrownBy(transfer::startPosting)
+                    .satisfies(thrown ->
+                            assertThat(thrown.from()).isEqualTo(TransferStatus.APPROVAL_PENDING));
+        }
+
+        @Test
+        void nothing_can_be_approved_unless_it_is_waiting() {
+            assertThatExceptionOfType(IllegalTransferTransitionException.class)
+                    .isThrownBy(() -> inState(TransferStatus.SCREENING).approve("mette"));
+            assertThatExceptionOfType(IllegalTransferTransitionException.class)
+                    .isThrownBy(() -> inState(TransferStatus.POSTED).approve("mette"));
+        }
+
+        private String lastNote(Transfer transfer) {
+            List<TransferTransition> history = transfer.history();
+            return history.get(history.size() - 1).note();
+        }
+    }
+
+    @Nested
     @DisplayName("terminal states")
     class Terminality {
 
@@ -312,6 +431,10 @@ class TransferTest {
                     .isThrownBy(() -> transfer.compensated(someLedgerTransaction()));
             assertThatExceptionOfType(IllegalTransferTransitionException.class)
                     .isThrownBy(() -> transfer.fail("x"));
+            assertThatExceptionOfType(IllegalTransferTransitionException.class)
+                    .isThrownBy(() -> transfer.approve("mette"));
+            assertThatExceptionOfType(IllegalTransferTransitionException.class)
+                    .isThrownBy(() -> transfer.declineApproval("mette", "x"));
         }
 
         @ParameterizedTest(name = "{0}")
@@ -395,7 +518,7 @@ class TransferTest {
             Transfer transfer = requested();
             transfer.startScreening();
             transfer.awaitApproval("over the four-eyes threshold");
-            transfer.startPosting();
+            transfer.approve("checker");
             transfer.posted(someLedgerTransaction());
             transfer.complete();
 

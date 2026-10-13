@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
 
+import io.lara.payments.application.DecideApproval;
 import io.lara.payments.application.RequestTransfer;
 import io.lara.payments.application.StoredTransfer;
 import io.lara.payments.application.Transfers;
@@ -30,6 +31,7 @@ import io.lara.payments.domain.Money;
 import io.lara.payments.domain.Transfer;
 import io.lara.payments.domain.TransferId;
 import io.lara.payments.infrastructure.idempotency.IdempotencyKeys;
+import io.lara.payments.infrastructure.rest.TransferDtos.ApprovalDecisionBody;
 import io.lara.payments.infrastructure.rest.TransferDtos.RequestTransferBody;
 import io.lara.payments.infrastructure.rest.TransferDtos.TransferResponse;
 import io.lara.payments.infrastructure.saga.TransferSagaRunner;
@@ -66,6 +68,7 @@ public class TransferResource {
     private static final int MAX_KEY_LENGTH = 255;
 
     private final RequestTransfer requestTransfer;
+    private final DecideApproval decideApproval;
     private final TransferSagaRunner saga;
     private final Transfers transfers;
     private final IdempotencyKeys keys;
@@ -74,6 +77,7 @@ public class TransferResource {
 
     public TransferResource(
             RequestTransfer requestTransfer,
+            DecideApproval decideApproval,
             TransferSagaRunner saga,
             Transfers transfers,
             IdempotencyKeys keys,
@@ -81,6 +85,7 @@ public class TransferResource {
             Clock clock) {
 
         this.requestTransfer = requestTransfer;
+        this.decideApproval = decideApproval;
         this.saga = saga;
         this.transfers = transfers;
         this.keys = keys;
@@ -143,6 +148,51 @@ public class TransferResource {
     @Path("/transfers/{id}")
     public TransferResponse byId(@PathParam("id") String id) {
         return TransferResponse.of(load(TransferId.of(id)));
+    }
+
+    /**
+     * A second person approves a parked transfer.
+     *
+     * <p>The approval commits on its own, and only then is the saga driven. A checker clicking
+     * approve should not wait on three downstream services, and their decision has to survive
+     * even if the posting that follows fails — which it can, because the transfer is now in
+     * {@code POSTING} and the recovery sweep owns anything left unfinished.
+     *
+     * <p>Who the checker is arrives in the body for now. Phase 4 brings Keycloak, and this
+     * becomes the authenticated principal — at which point the rule stops being advisory, since
+     * a caller can currently name anyone. The domain rule is already real; only the identity is
+     * a placeholder.
+     */
+    @POST
+    @Path("/transfers/{id}/approval")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public TransferResponse approve(
+            @PathParam("id") String id, @Valid ApprovalDecisionBody body) {
+
+        TransferId transferId = TransferId.of(id);
+
+        QuarkusTransaction.requiringNew().run(() -> decideApproval.approve(transferId, body.actor()));
+        saga.drive(transferId);
+
+        return TransferResponse.of(load(transferId));
+    }
+
+    /** A second person declines it. Ends in {@code REJECTED} with no posting ever made. */
+    @POST
+    @Path("/transfers/{id}/decline")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public TransferResponse decline(
+            @PathParam("id") String id, @Valid ApprovalDecisionBody body) {
+
+        TransferId transferId = TransferId.of(id);
+        String reason = body.reason() == null || body.reason().isBlank()
+                ? "no reason given"
+                : body.reason();
+
+        QuarkusTransaction.requiringNew().run(
+                () -> decideApproval.decline(transferId, body.actor(), reason));
+
+        return TransferResponse.of(load(transferId));
     }
 
     /**

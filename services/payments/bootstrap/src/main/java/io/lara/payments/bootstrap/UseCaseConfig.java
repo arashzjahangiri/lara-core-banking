@@ -10,6 +10,7 @@ import jakarta.inject.Singleton;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import io.lara.payments.application.AccountDirectory;
+import io.lara.payments.application.DecideApproval;
 import io.lara.payments.application.LedgerPosting;
 import io.lara.payments.application.RequestTransfer;
 import io.lara.payments.application.RiskScreening;
@@ -73,6 +74,12 @@ public class UseCaseConfig {
     @ApplicationScoped
     RequestTransfer requestTransfer(Transfers transfers, TransferRouter router, Clock clock) {
         return new RequestTransfer(transfers, router, clock);
+    }
+
+    @Produces
+    @ApplicationScoped
+    DecideApproval decideApproval(Transfers transfers) {
+        return new DecideApproval(transfers);
     }
 
     @Produces

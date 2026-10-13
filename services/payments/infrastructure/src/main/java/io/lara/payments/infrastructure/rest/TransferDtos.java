@@ -34,6 +34,18 @@ final class TransferDtos {
     }
 
     /**
+     * Who is approving or declining, and why.
+     *
+     * <p>{@code actor} is in the body only until Phase 4 brings Keycloak, after which it becomes
+     * the authenticated principal. The four-eyes rule itself is already real and enforced in the
+     * domain; what is provisional is that a caller can currently name anyone.
+     */
+    record ApprovalDecisionBody(
+            @NotBlank @Size(max = 100) String actor,
+            @Size(max = 300) String reason) {
+    }
+
+    /**
      * A transfer, as a client sees it.
      *
      * <p>{@code fee} and {@code totalDebit} are both present because they answer different

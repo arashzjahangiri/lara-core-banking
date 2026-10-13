@@ -156,10 +156,10 @@ class ResilienceTest {
                     new io.lara.payments.application.PostingCommand(
                             io.lara.payments.domain.TransferReference.of("TRANSFER-y"),
                             "CUSTOMER000001",
-                            "BANK.SEPA.SUSPENSE.EUR",
+                            "BANK.CLEARING.EUR",
                             Money.of(100, "EUR"),
                             Money.zero("EUR"),
-                            "BANK.INCOME.FEES.EUR",
+                            "BANK.FEE.INCOME.EUR",
                             LocalDate.of(2026, 10, 5)))))
                     .isEqualTo("ledger");
         }

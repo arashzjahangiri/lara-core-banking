@@ -53,6 +53,19 @@ import io.lara.payments.domain.LedgerTransactionRef;
 @ApplicationScoped
 public class InMemoryLedger implements LedgerPosting {
 
+    /**
+     * The bank''s own accounts, mirroring the ledger''s {@code V2__seed_chart_of_accounts.sql}.
+     *
+     * <p>Customer accounts are not listed: they are created as customers are onboarded, so the
+     * check below admits anything beginning {@code CUSTOMER}. What this catches is a posting to a
+     * <em>bank</em> account that does not exist, which is the mistake configuration makes.
+     */
+    private static final java.util.Set<String> CHART_OF_ACCOUNTS = java.util.Set.of(
+            "BANK.CASH.EUR", "BANK.CASH.USD",
+            "BANK.FEE.INCOME.EUR", "BANK.FEE.INCOME.USD",
+            "BANK.CLEARING.EUR", "BANK.CLEARING.USD",
+            "BANK.SUSPENSE.EUR", "BANK.SUSPENSE.USD");
+
     private final Map<String, Long> balances = new HashMap<>();
     private final Map<String, LedgerTransactionRef> byReference = new ConcurrentHashMap<>();
     private final Map<LedgerTransactionRef, List<Leg>> postings = new ConcurrentHashMap<>();
@@ -116,6 +129,12 @@ public class InMemoryLedger implements LedgerPosting {
             long fee = command.fee().minorUnits();
             long totalDebit = amount + fee;
 
+            requireKnownAccount(command.debtorLedgerAccount());
+            requireKnownAccount(command.creditorLedgerAccount());
+            if (fee != 0) {
+                requireKnownAccount(command.feeIncomeAccount());
+            }
+
             long available = balances.getOrDefault(command.debtorLedgerAccount(), 0L);
             if (available < totalDebit) {
                 throw new LedgerRefusedException("insufficient funds in "
@@ -172,6 +191,22 @@ public class InMemoryLedger implements LedgerPosting {
         reversals.put(original, recorded);
         postings.put(recorded, contra);
         return recorded;
+    }
+
+    /**
+     * Refuses a posting to an account the ledger does not have.
+     *
+     * <p>Anything beginning {@code CUSTOMER} or {@code TEST} is admitted — the first because
+     * customer accounts are created as people are onboarded, the second so a test can set up its
+     * own scenario without adding to the chart of accounts.
+     */
+    private static void requireKnownAccount(String account) {
+        if (account.startsWith("CUSTOMER") || account.startsWith("TEST")) {
+            return;
+        }
+        if (!CHART_OF_ACCOUNTS.contains(account)) {
+            throw new LedgerRefusedException("no such ledger account: " + account);
+        }
     }
 
     private void apply(List<Leg> legs) {

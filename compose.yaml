@@ -145,6 +145,25 @@ services:
       QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/payments
       QUARKUS_DATASOURCE_USERNAME: payments
       QUARKUS_DATASOURCE_PASSWORD: payments
+
+      # The orchestrator's three outbound calls, by container hostname.
+      #
+      # The application defaults are localhost, which is right when the four services are run
+      # side by side on a developer's machine and completely wrong in a container — there
+      # localhost is the payments container itself, so every call reaches nothing and every
+      # transfer stalls with "could not reach accounts".
+      QUARKUS_REST_CLIENT_ACCOUNTS_API_URL: http://accounts:8090
+      QUARKUS_REST_CLIENT_RISK_API_URL: http://risk:8110
+      QUARKUS_REST_CLIENT_LEDGER_API_URL: http://ledger:8080
+
+      # Beneficiary IBANs the simulated scheme refuses, comma separated. Empty by default.
+      #
+      # This is how the compensation path is reached on demand. A transfer to a listed IBAN is
+      # posted to the ledger and then rejected by the scheme, so the saga has to reverse a
+      # payment whose money has already moved:
+      #
+      #   PAYMENTS_REJECTED_IBANS=DE89370400440532013000 docker compose up -d payments
+      PAYMENTS_SCHEME_REJECTED_IBANS: ${PAYMENTS_REJECTED_IBANS:-}
     ports:
       - "${PAYMENTS_PORT:-8100}:8100"
     healthcheck:

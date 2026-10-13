@@ -45,11 +45,18 @@ public class UseCaseConfig {
     @ConfigProperty(name = "payments.sepa-cutoff", defaultValue = "16:00")
     String sepaCutoff;
 
-    /** Where a SEPA transfer's money sits until the scheme settles it. */
-    @ConfigProperty(name = "payments.sepa-suspense-account", defaultValue = "BANK.SEPA.SUSPENSE.EUR")
+    /**
+     * Where a SEPA transfer's money sits until the scheme settles it.
+     *
+     * <p>Must name an account the ledger actually has. The ledger refuses a posting to an unknown
+     * account, so a plausible-looking name invented here fails every SEPA transfer at the posting
+     * step — and no unit test catches it, because a ledger stand-in has no chart of accounts to
+     * check against.
+     */
+    @ConfigProperty(name = "payments.sepa-suspense-account", defaultValue = "BANK.CLEARING.EUR")
     String sepaSuspenseAccount;
 
-    @ConfigProperty(name = "payments.fee-income-account", defaultValue = "BANK.INCOME.FEES.EUR")
+    @ConfigProperty(name = "payments.fee-income-account", defaultValue = "BANK.FEE.INCOME.EUR")
     String feeIncomeAccount;
 
     /** Above this, a second person has to approve. Configuration, never a constant. */

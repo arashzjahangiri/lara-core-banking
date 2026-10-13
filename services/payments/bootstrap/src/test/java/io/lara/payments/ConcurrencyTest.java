@@ -115,7 +115,7 @@ class ConcurrencyTest {
     private static final Iban DEBTOR = Iban.of("DK5000400440116243");
     private static final Iban CREDITOR = Iban.of("DE89370400440532013000");
 
-    private static final String SUSPENSE = "BANK.SEPA.SUSPENSE.EUR";
+    private static final String SUSPENSE = "BANK.CLEARING.EUR";
 
     /**
      * A fresh ledger account per test.
@@ -477,7 +477,7 @@ class ConcurrencyTest {
                     "TEST.TARGET",
                     io.lara.payments.domain.Money.of(AMOUNT, "EUR"),
                     io.lara.payments.domain.Money.of(FEE, "EUR"),
-                    "BANK.INCOME.FEES.EUR",
+                    "BANK.FEE.INCOME.EUR",
                     java.time.LocalDate.of(2026, 10, 5));
 
             var first = ledger().post(command);
@@ -494,7 +494,7 @@ class ConcurrencyTest {
                     "TEST.TARGET",
                     io.lara.payments.domain.Money.of(AMOUNT, "EUR"),
                     io.lara.payments.domain.Money.of(FEE, "EUR"),
-                    "BANK.INCOME.FEES.EUR",
+                    "BANK.FEE.INCOME.EUR",
                     java.time.LocalDate.of(2026, 10, 5));
 
             org.assertj.core.api.Assertions

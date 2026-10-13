@@ -19,6 +19,9 @@ means adding a new record that references the old one.
 | [0011](0011-reversal-by-contra-entry.md) | Reversal by contra entry | Accepted |
 | [0012](0012-hash-chained-ledger.md) | Hash-chained ledger | Accepted |
 | [0013](0013-idempotency-keys-at-the-api-edge.md) | Idempotency keys at the API edge | Accepted |
+| [0014](0014-optimistic-locking-for-saga-state.md) | Optimistic locking for saga state | Accepted |
+| [0015](0015-four-eyes-is-a-domain-rule.md) | Four-eyes is a domain rule, not an authorisation concern | Accepted |
+| [0016](0016-no-fallback-may-fabricate-a-success.md) | No fallback may fabricate a success | Accepted |
 
 ## Planned
 

@@ -129,12 +129,53 @@ Four services, each owning its own PostgreSQL.
 | --- | --- | --- |
 | `ledger` | Append-only double-entry postings. The only service that may write money. | **Built** |
 | `accounts` | Customers, accounts, IBANs, KYC state, balance read model. | **Built** |
-| `payments` | Orchestrates transfers: validate, screen, post, confirm or compensate. | Phase 3 |
-| `risk` | Limits, velocity rules, sanctions screening. | Phase 3 |
+| `payments` | Orchestrates transfers: validate, screen, post, confirm or compensate. | **Built** |
+| `risk` | Limits, velocity rules, sanctions screening. | **Built** |
 
 Services talk two ways, and the rule is **ask synchronously, tell asynchronously** — a
 REST call when the caller needs an answer to proceed, an event when it has a fact nobody
 is waiting on. ([ADR-0002](docs/adr/0002-synchronous-commands-asynchronous-facts.md))
+
+### How a transfer actually moves
+
+`payments` owns the workflow explicitly rather than letting it emerge from who happens to
+subscribe to what. Every outbound call lives in one file, and the order they happen in is the
+order they are written. ([ADR-0003](docs/adr/0003-orchestrated-saga-rather-than-choreography.md))
+
+```
+REQUESTED ──▶ SCREENING ──┬──▶ POSTING ──┬──▶ POSTED ──┬──▶ COMPLETED
+                          │              │             │
+                          │              └──▶ REJECTED └──▶ COMPENSATING ──▶ COMPENSATED
+                          │                                      │
+                          ├──▶ APPROVAL_PENDING ──▶ POSTING      └──▶ FAILED
+                          │
+                          └──▶ REJECTED
+```
+
+| Step | Calls | On failure |
+| --- | --- | --- |
+| Validate the accounts | `accounts` | reject — nothing moved |
+| Screen the transfer | `risk` | reject, or park for a second person |
+| Post the entry | `ledger` | reject if refused; **stay put** if unreachable |
+| Submit to the scheme | SEPA only | **compensate** — the money already moved |
+
+Two properties of that diagram carry most of the safety. **`REJECTED` is unreachable once money
+has moved**, so everything downstream can read it as "nothing happened" without further checking.
+And **`POSTED` cannot be abandoned** — its only exits are finishing and reversing, because a saga
+that can walk away while the ledger holds the money is a saga that loses it. The state machine
+enforces both; no caller has to remember.
+
+Each step commits in its own transaction and the state is saved *before* the next call goes out.
+A crash during the risk call therefore leaves the saga in `SCREENING` — a state that says exactly
+which call was in flight — rather than in `REQUESTED`, which would claim nothing had been
+attempted. A scheduled sweep picks up anything left and re-drives it, which is only safe because
+every downstream call is idempotent.
+
+The hardest distinction in the whole phase is between **a decision and an outage**. A risk service
+that says "blocked" has decided something; one that times out has decided nothing. Conflating them
+either rejects every valid transfer for the length of an outage or lets unscreened payments
+through, so an unreachable dependency is neither — the saga simply stops where it is.
+([ADR-0016](docs/adr/0016-no-fallback-may-fabricate-a-success.md))
 
 **Deliberately not included:** no service-discovery server, no config server, no service
 mesh, no API-gateway product. On Kubernetes, DNS is service discovery, ConfigMaps are
@@ -183,8 +224,9 @@ static final ArchRule domain_and_application_are_framework_free = noClasses()
 | Architecture | Layer dependencies, no floating point, no legacy date types. | 6 |
 | Integration | Real HTTP against a real PostgreSQL via Dev Services, including the outbox. | 36 |
 | Contract | Consumer-driven Pact between `accounts` and `ledger`, verified both ways. | 2 |
+| Concurrency | Parallel transfers, a sweep racing the orchestrator, one key from many threads. | 13 |
 
-Two are worth singling out.
+Three are worth singling out.
 
 **The trial balance.** After posting, every debit and every credit across the whole
 database is summed. If they ever differ, money has been created or destroyed. A second
@@ -201,13 +243,21 @@ UPDATE posting_leg  →  posting_leg is append-only; UPDATE is not permitted.
                        Post a contra entry instead.
 ```
 
+**The concurrency suite, and the fake it runs against.** Ten transfers race for an account
+holding four transfers' worth of money, while a recovery sweep runs at the same instant. The
+point is not the threads — it is that the ledger stand-in *keeps books*: entries must sum to
+zero, an account cannot go below zero, and one reference yields one transaction. A test against a
+permissive stub proves nothing, because "no transfer overdrew the account" would then be a
+statement about the stub and would pass just as happily with the locking removed. Two tests point
+at the fake itself to check it refuses what it claims to refuse.
+
 ## Roadmap
 
 | Phase | Contents | Status |
 | --- | --- | --- |
 | 1 | `ledger` service, chart of accounts, N-leg postings, idempotency, tests, CI, Compose | **Done** |
 | 2 | Outbox via Debezium, `accounts` service, balance read model, reversals, hash-chained audit, business calendar, Pact contracts | **Done** |
-| 3 | `payments` and `risk`, saga with compensation, scheme routing, four-eyes approval | Planned |
+| 3 | `payments` and `risk`, saga with compensation, scheme routing, four-eyes approval, crash recovery, resilience | **Done** |
 | 4 | Keycloak and OIDC, BFF, React and MUI front end including the saga status view | Planned |
 | 5 | Kubernetes and Helm, OpenTelemetry, Prometheus, Grafana, native image benchmarks | Planned |
 

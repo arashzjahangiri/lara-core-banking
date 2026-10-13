@@ -13,6 +13,7 @@ import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -25,14 +26,17 @@ import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.lara.payments.application.DecideApproval;
 import io.lara.payments.application.RequestTransfer;
 import io.lara.payments.application.StoredTransfer;
+import io.lara.payments.application.TransferQuery;
 import io.lara.payments.application.Transfers;
 import io.lara.payments.domain.Iban;
 import io.lara.payments.domain.Money;
 import io.lara.payments.domain.Transfer;
 import io.lara.payments.domain.TransferId;
+import io.lara.payments.domain.TransferStatus;
 import io.lara.payments.infrastructure.idempotency.IdempotencyKeys;
 import io.lara.payments.infrastructure.rest.TransferDtos.ApprovalDecisionBody;
 import io.lara.payments.infrastructure.rest.TransferDtos.RequestTransferBody;
+import io.lara.payments.infrastructure.rest.TransferDtos.TransferPageResponse;
 import io.lara.payments.infrastructure.rest.TransferDtos.TransferResponse;
 import io.lara.payments.infrastructure.saga.TransferSagaRunner;
 
@@ -148,6 +152,60 @@ public class TransferResource {
     @Path("/transfers/{id}")
     public TransferResponse byId(@PathParam("id") String id) {
         return TransferResponse.of(load(TransferId.of(id)));
+    }
+
+    /**
+     * Transfers matching a filter, newest first.
+     *
+     * <p>Every parameter is optional, and an absent one means "do not filter on this" rather than
+     * "match nothing". That is the behaviour a caller assembling a query string expects, and the
+     * opposite reading turns a forgotten parameter into an empty page nobody can explain.
+     *
+     * <p>Filtered by the debtor''s account rather than by customer. Payments does not own customer
+     * identity — accounts does — and inventing a customer filter would mean keeping a second copy
+     * of somebody else''s truth in this database. A caller who wants everything one customer sent
+     * asks accounts for their IBANs first.
+     */
+    @GET
+    @Path("/transfers")
+    public TransferPageResponse list(
+            @QueryParam("debtorIban") String debtorIban,
+            @QueryParam("status") String status,
+            @QueryParam("requestedBy") String requestedBy,
+            @QueryParam("page") @jakarta.ws.rs.DefaultValue("0") int page,
+            @QueryParam("size") @jakarta.ws.rs.DefaultValue("25") int size) {
+
+        TransferQuery query = TransferQuery.firstPage().onPage(page, size);
+
+        if (debtorIban != null && !debtorIban.isBlank()) {
+            query = query.withDebtor(Iban.of(debtorIban));
+        }
+        if (status != null && !status.isBlank()) {
+            query = query.withStatus(parseStatus(status));
+        }
+        if (requestedBy != null && !requestedBy.isBlank()) {
+            query = query.withRequestedBy(requestedBy);
+        }
+
+        TransferQuery built = query;
+        return TransferPageResponse.of(
+                QuarkusTransaction.requiringNew().call(() -> transfers.search(built)));
+    }
+
+    /**
+     * Parses a status, or says which ones exist.
+     *
+     * <p>{@code TransferStatus.valueOf} throws an {@code IllegalArgumentException} whose message
+     * is the enum class name and the bad value, which tells a caller nothing about what they
+     * should have sent. Listing the legal values turns one support question into none.
+     */
+    private static TransferStatus parseStatus(String status) {
+        try {
+            return TransferStatus.valueOf(status.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException unknown) {
+            throw new IllegalArgumentException("unknown status ''" + status + "''; expected one of "
+                    + java.util.Arrays.toString(TransferStatus.values()));
+        }
     }
 
     /**

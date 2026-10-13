@@ -65,4 +65,16 @@ public interface Transfers {
      * @return the number of resumptions including this one
      */
     int recordRecoveryAttempt(TransferId id);
+
+    /**
+     * Transfers matching a filter, newest first.
+     *
+     * <p>Newest first because the question behind this endpoint is almost always "what has
+     * happened recently", and a support agent scrolling to page nine to find this morning is a
+     * support agent who will export the table to a spreadsheet instead.
+     *
+     * <p>Paginated with a hard cap rather than returning everything. An unbounded list endpoint
+     * is fine until the day one account has fifty thousand transfers, and then it is an outage.
+     */
+    TransferPage search(TransferQuery query);
 }

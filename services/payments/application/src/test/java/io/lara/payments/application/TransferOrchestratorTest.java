@@ -722,6 +722,25 @@ class TransferOrchestratorTest {
         }
 
         @Override
+        public TransferPage search(TransferQuery query) {
+            List<StoredTransfer> matching = rows.values().stream()
+                    .filter(stored -> query.debtor()
+                            .map(iban -> stored.transfer().debtor().equals(iban)).orElse(true))
+                    .filter(stored -> query.status()
+                            .map(status -> stored.transfer().status() == status).orElse(true))
+                    .filter(stored -> query.requestedBy()
+                            .map(who -> stored.transfer().requestedBy().equals(who)).orElse(true))
+                    .toList();
+
+            List<StoredTransfer> page = matching.stream()
+                    .skip(query.offset())
+                    .limit(query.size())
+                    .toList();
+
+            return new TransferPage(page, query.page(), query.size(), matching.size());
+        }
+
+        @Override
         public int recordRecoveryAttempt(TransferId id) {
             StoredTransfer current = rows.get(id);
             int attempts = current.recoveryAttempts() + 1;

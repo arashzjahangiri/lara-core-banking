@@ -138,6 +138,32 @@ final class TransferDtos {
         }
     }
 
+    /**
+     * A page of transfers.
+     *
+     * <p>{@code total} and {@code hasMore} are both present on purpose. Without the total a
+     * client cannot tell a last page from a page that happens to be short, and {@code hasMore}
+     * saves every caller from re-deriving the same arithmetic and getting the boundary wrong.
+     */
+    record TransferPageResponse(
+            List<TransferResponse> transfers,
+            int page,
+            int size,
+            long total,
+            boolean hasMore) {
+
+        static TransferPageResponse of(io.lara.payments.application.TransferPage page) {
+            return new TransferPageResponse(
+                    page.transfers().stream()
+                            .map(stored -> TransferResponse.of(stored.transfer()))
+                            .toList(),
+                    page.page(),
+                    page.size(),
+                    page.total(),
+                    page.hasMore());
+        }
+    }
+
     record TransitionResponse(String from, String to, Instant at, String note) {
 
         static TransitionResponse of(TransferTransition transition) {

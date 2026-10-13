@@ -12,6 +12,8 @@ import jakarta.transaction.Transactional;
 
 import io.lara.payments.application.ConcurrentTransferModificationException;
 import io.lara.payments.application.StoredTransfer;
+import io.lara.payments.application.TransferPage;
+import io.lara.payments.application.TransferQuery;
 import io.lara.payments.application.Transfers;
 import io.lara.payments.domain.Transfer;
 import io.lara.payments.domain.TransferId;
@@ -184,6 +186,59 @@ public class JpaTransfers implements Transfers {
                 .getSingleResult();
 
         return attempts.intValue();
+    }
+
+    /**
+     * One page of matching transfers, newest first, plus the total.
+     *
+     * <p>The filters are built as an optional {@code and} chain rather than by concatenating SQL,
+     * so an absent filter contributes nothing instead of a {@code 1=1} that the planner then has
+     * to see past. Every value still arrives as a bound parameter.
+     *
+     * <p>Two queries rather than one. The count is what lets a client tell a last page from a
+     * page that happens to be short, and no amount of cleverness gets both from a single
+     * statement without reading every row.
+     */
+    @Override
+    @Transactional(Transactional.TxType.MANDATORY)
+    public TransferPage search(TransferQuery query) {
+        String where = """
+                where (:debtor is null or t.debtorIban = :debtor)
+                  and (:status is null or t.status = :status)
+                  and (:requestedBy is null or t.requestedBy = :requestedBy)
+                """;
+
+        var page = entityManager
+                .createQuery("select t from TransferEntity t " + where
+                        + " order by t.requestedAt desc, t.id desc", TransferEntity.class);
+        bind(page, query);
+
+        List<StoredTransfer> rows = page
+                .setFirstResult(query.offset())
+                .setMaxResults(query.size())
+                .getResultList()
+                .stream()
+                .map(this::stored)
+                .toList();
+
+        var counted = entityManager.createQuery(
+                "select count(t) from TransferEntity t " + where, Long.class);
+        bind(counted, query);
+
+        return new TransferPage(rows, query.page(), query.size(), counted.getSingleResult());
+    }
+
+    /**
+     * Binds the three optional filters.
+     *
+     * <p>Null means "no filter" and the {@code where} clause above short-circuits on it. JPA
+     * requires every named parameter to be set even when the predicate can never use it, so they
+     * are all bound regardless.
+     */
+    private static void bind(jakarta.persistence.Query query, TransferQuery filter) {
+        query.setParameter("debtor", filter.debtor().map(iban -> iban.value()).orElse(null));
+        query.setParameter("status", filter.status().map(Enum::name).orElse(null));
+        query.setParameter("requestedBy", filter.requestedBy().orElse(null));
     }
 
     private StoredTransfer stored(TransferEntity entity) {
